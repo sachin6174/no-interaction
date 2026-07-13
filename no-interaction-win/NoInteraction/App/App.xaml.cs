@@ -23,6 +23,7 @@ namespace NoInteraction
 
         protected override void OnExit(ExitEventArgs e)
         {
+            ApproverEngine.Shared.Dispose();
             TrayManager.Shared.Dispose();
             base.OnExit(e);
         }

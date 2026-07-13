@@ -27,12 +27,25 @@ class ClickAutomation:
         return cls._instance
 
     def __init__(self):
-        self._disp = display.Display()
+        self._disp = None
+        self._wayland_warning_logged = False
+        try:
+            self._disp = display.Display()
+        except Exception as e:
+            print(f"[ClickAutomation] X11 Display connection failed (likely running native Wayland): {e}")
 
     def perform_click(self, point: tuple[int, int], completion: Optional[Callable[[], None]] = None) -> None:
         threading.Thread(target=self._click_worker, args=(point, completion), daemon=True).start()
 
     def _click_worker(self, point: tuple[int, int], completion: Optional[Callable[[], None]]) -> None:
+        if self._disp is None:
+            if not self._wayland_warning_logged:
+                print("[ClickAutomation] WARNING: Fallback clicks are disabled. Native Wayland sessions do not support XTest. Please switch to X11/XWayland if synthetic click fallbacks are required.")
+                self._wayland_warning_logged = True
+            if completion:
+                completion()
+            return
+
         try:
             disp = self._disp
             root = disp.screen().root

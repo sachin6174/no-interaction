@@ -19,170 +19,222 @@ final class DashboardViewModel: ObservableObject {
 struct DashboardView: View {
     @ObservedObject var engine = ApproverEngine.shared
     @StateObject private var vm = DashboardViewModel()
+    @State private var isMonitoringHovered = false
+    @State private var isSoundHovered = false
 
     var body: some View {
         VStack(spacing: 0) {
 
             // ── Header ──────────────────────────────────────────────────────
-            HStack(spacing: 12) {
+            HStack(spacing: 16) {
+                // Status Shield Indicator
                 ZStack {
                     Circle()
                         .fill(engine.isEnabled && engine.isAccessibilityGranted
-                              ? Color.green.opacity(0.18)
-                              : engine.isEnabled ? Color.orange.opacity(0.18) : Color.gray.opacity(0.18))
-                        .frame(width: 36, height: 36)
+                              ? Color.green.opacity(0.15)
+                              : engine.isEnabled ? Color.orange.opacity(0.15) : Color.gray.opacity(0.15))
+                        .frame(width: 42, height: 42)
+                    
                     Image(systemName: engine.isEnabled && engine.isAccessibilityGranted
-                          ? "bolt.shield.fill" : engine.isEnabled
-                          ? "exclamationmark.shield.fill" : "pause.circle.fill")
-                        .font(.system(size: 18, weight: .bold))
+                          ? "shield.checkered" : engine.isEnabled
+                          ? "exclamationmark.shield.fill" : "shield.slash.fill")
+                        .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(engine.isEnabled && engine.isAccessibilityGranted ? .green
                                          : engine.isEnabled ? .orange : .secondary)
                 }
+                .scaleEffect(isMonitoringHovered ? 1.05 : 1.0)
+                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isMonitoringHovered)
+                .onHover { hovering in isMonitoringHovered = hovering }
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text("NoInteraction").font(.title3).fontWeight(.bold)
+                        Text("NoInteraction")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
                         Text("v1.2")
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(Color.primary.opacity(0.08)))
                             .foregroundColor(.secondary)
                     }
                     Text(engine.isEnabled && engine.isAccessibilityGranted
                          ? "Active & Monitoring Anti-Gravity Prompts"
-                         : engine.isEnabled ? "Needs Accessibility Permission" : "Paused")
-                        .font(.caption).foregroundColor(.secondary)
+                         : engine.isEnabled ? "Accessibility Permission Required" : "Monitoring Paused")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
                 }
 
                 Spacer()
 
                 // Approval Count Badge
                 if engine.totalApprovalsCount > 0 {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.seal.fill").font(.caption)
+                    HStack(spacing: 5) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 12, weight: .semibold))
                         Text("\(engine.totalApprovalsCount) Approved")
-                            .font(.caption2).fontWeight(.semibold)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
                     }
-                    .padding(.horizontal, 9).padding(.vertical, 5)
-                    .background(Capsule().fill(Color.green.opacity(0.15)))
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(LinearGradient(colors: [Color.green.opacity(0.18), Color.emerald.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    )
                     .foregroundColor(.green)
+                    .transition(.scale.combined(with: .opacity))
                 }
 
                 // Sound Toggle Button
                 Button {
-                    engine.soundEnabled.toggle()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
+                        engine.soundEnabled.toggle()
+                    }
                 } label: {
-                    Image(systemName: engine.soundEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                        .font(.system(size: 14))
+                    Image(systemName: engine.soundEnabled ? "speaker.wave.2.bubble.fill" : "speaker.slash.fill")
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundColor(engine.soundEnabled ? .accentColor : .secondary)
-                        .padding(6)
-                        .background(Circle().fill(Color(NSColor.controlBackgroundColor)))
+                        .padding(8)
+                        .background(Circle().fill(Color(NSColor.controlBackgroundColor).opacity(isSoundHovered ? 0.9 : 0.6)))
+                        .shadow(color: Color.black.opacity(isSoundHovered ? 0.08 : 0.0), radius: 2, y: 1)
                 }
                 .buttonStyle(.plain)
                 .help(engine.soundEnabled ? "Sound Feedback Enabled" : "Sound Muted")
+                .onHover { hovering in isSoundHovered = hovering }
 
-                Toggle("", isOn: $engine.isEnabled)
+                Toggle("", isOn: $engine.isEnabled.animation(.spring()))
                     .toggleStyle(SwitchToggleStyle(tint: .green))
                     .labelsHidden()
+                    .controlSize(.small)
             }
-            .padding(.horizontal, 16).padding(.vertical, 12)
+            .padding(.horizontal, 18).padding(.vertical, 14)
             .background(VisualEffectView(material: .headerView, blendingMode: .withinWindow))
-
-            Divider()
 
             // ── Permission Banner ───────────────────────────────────────────
             if !engine.isAccessibilityGranted {
                 HStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 16))
+                        .font(.system(size: 18))
                         .foregroundColor(.orange)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Accessibility Permission Required")
-                            .font(.system(size: 13, weight: .bold))
-                        Text("NoInteraction needs permission to observe & auto-approve Anti-Gravity prompts.")
-                            .font(.caption).foregroundColor(.secondary)
+                    
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Accessibility Access Needed")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                        Text("Please grant accessibility permissions so NoInteraction can auto-click approval dialogues.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
                     }
+                    
                     Spacer()
-                    Button("Open Settings") {
+                    
+                    Button("Grant Access") {
+                        engine.promptAccessibilityPermission()
                         NSWorkspace.shared.open(
                             URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
                         )
                     }
-                    .buttonStyle(.borderedProminent).controlSize(.small).tint(.orange)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(.orange)
+                    .shadow(color: Color.orange.opacity(0.2), radius: 4, y: 1)
                 }
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(Color.orange.opacity(0.09))
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .background(Color.orange.opacity(0.08))
+                .transition(.slide.combined(with: .opacity))
 
                 Divider()
             }
 
             // ── Tab Navigation ──────────────────────────────────────────────
-            HStack(spacing: 6) {
-                tabBtn("Activity Log", tab: .activityLog, icon: "clock.fill")
+            HStack(spacing: 8) {
+                tabBtn("Activity Log", tab: .activityLog, icon: "text.justify.left")
                 tabBtn("Approval Rules", tab: .rules, icon: "slider.horizontal.3")
-                tabBtn("Prompt Queue", tab: .promptQueue, icon: "play.rectangle.fill")
+                tabBtn("Prompt Queue", tab: .promptQueue, icon: "square.stack.3d.down.right.fill")
+                
                 Spacer()
+                
                 if vm.selectedTab == .activityLog && !engine.logs.isEmpty {
-                    Button("Clear Log") {
-                        engine.logs.removeAll()
+                    Button(action: {
+                        withAnimation {
+                            engine.logs.removeAll()
+                        }
+                    }) {
+                        Label("Clear Log", systemImage: "trash")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
                     }
                     .buttonStyle(.plain)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
                 }
             }
-            .padding(.horizontal, 14).padding(.top, 8)
- 
-            Divider().padding(.top, 6)
- 
+            .padding(.horizontal, 16).padding(.top, 12)
+
             // ── Body Content ────────────────────────────────────────────────
             Group {
-                if vm.selectedTab == .activityLog {
+                switch vm.selectedTab {
+                case .activityLog:
                     ActivityLogView(engine: engine, searchQuery: $vm.logSearchQuery)
-                } else if vm.selectedTab == .rules {
-                    RulesView(engine: engine,
-                              newBtn: $vm.newButtonKeyword,
-                              newChk: $vm.newCheckboxKeyword)
-                } else {
+                case .rules:
+                    RulesView(engine: engine, newBtn: $vm.newButtonKeyword, newChk: $vm.newCheckboxKeyword)
+                case .promptQueue:
                     PromptQueueView(engine: engine, newPromptText: $vm.newPromptText)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.easeInOut(duration: 0.15), value: vm.selectedTab)
 
             Divider()
 
             // ── Footer ──────────────────────────────────────────────────────
             HStack {
                 HStack(spacing: 6) {
-                    Circle().fill(engine.isAccessibilityGranted ? Color.green : Color.red)
-                        .frame(width: 7, height: 7)
-                    Text(engine.isAccessibilityGranted ? "Accessibility Ready" : "Accessibility Restricted")
-                        .font(.caption2).foregroundColor(.secondary)
+                    Circle()
+                        .fill(engine.isAccessibilityGranted ? Color.green : Color.red)
+                        .frame(width: 8, height: 8)
+                        .shadow(color: (engine.isAccessibilityGranted ? Color.green : Color.red).opacity(0.3), radius: 3)
+                    
+                    Text(engine.isAccessibilityGranted ? "Engine Online" : "System Access Missing")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(.secondary)
                 }
+                
                 Spacer()
+                
                 Button("Hide to Menu Bar") {
                     NSApp.windows.first?.orderOut(nil)
                 }
-                .buttonStyle(.plain).font(.caption).foregroundColor(.accentColor)
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundColor(.accentColor)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(Capsule().fill(Color.accentColor.opacity(0.08)))
             }
-            .padding(.horizontal, 14).padding(.vertical, 6)
-            .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            .background(Color(NSColor.windowBackgroundColor).opacity(0.3))
         }
-        .frame(minWidth: 540, minHeight: 440)
+        .background(VisualEffectView(material: .sidebar, blendingMode: .withinWindow))
+        .frame(minWidth: 580, minHeight: 480)
     }
 
     @ViewBuilder
     private func tabBtn(_ label: String, tab: DashboardTab, icon: String) -> some View {
-        Button(action: { vm.selectedTab = tab }) {
+        Button(action: {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                vm.selectedTab = tab
+            }
+        }) {
             Label(label, systemImage: icon)
-                .font(.system(size: 12, weight: vm.selectedTab == tab ? .semibold : .regular))
-                .padding(.vertical, 5).padding(.horizontal, 12)
-                .foregroundColor(vm.selectedTab == tab ? .primary : .secondary)
+                .font(.system(size: 11, weight: vm.selectedTab == tab ? .bold : .medium, design: .rounded))
+                .padding(.vertical, 6).padding(.horizontal, 12)
+                .foregroundColor(vm.selectedTab == tab ? .white : .primary.opacity(0.7))
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(vm.selectedTab == tab ? Color(NSColor.controlBackgroundColor) : .clear)
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(vm.selectedTab == tab
+                              ? AnyShapeStyle(LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.8)], startPoint: .top, endPoint: .bottom))
+                              : AnyShapeStyle(Color.clear))
                 )
-        }.buttonStyle(.plain)
+                .shadow(color: vm.selectedTab == tab ? Color.accentColor.opacity(0.2) : Color.clear, radius: 4, y: 1)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -191,6 +243,7 @@ struct DashboardView: View {
 struct ActivityLogView: View {
     @ObservedObject var engine: ApproverEngine
     @Binding var searchQuery: String
+    @State private var searchHovered = false
 
     var filteredLogs: [LogEntry] {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -203,65 +256,102 @@ struct ActivityLogView: View {
     }
 
     var body: some View {
-        if engine.logs.isEmpty {
-            VStack(spacing: 12) {
-                Spacer()
-                Image(systemName: "bolt.shield")
-                    .font(.system(size: 42))
-                    .foregroundColor(.secondary.opacity(0.35))
-                Text("Listening for Anti-Gravity Prompts…")
-                    .font(.headline).foregroundColor(.secondary)
-                Text("When Anti-Gravity asks for permission (Allow/Submit/Run), NoInteraction will auto-accept and log it here.")
-                    .font(.caption).foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-                Spacer()
-            }
-        } else {
-            VStack(spacing: 0) {
-                HStack {
-                    Image(systemName: "magnifyingglass").font(.caption).foregroundColor(.secondary)
-                    TextField("Filter activity log...", text: $searchQuery)
+        VStack(spacing: 0) {
+            if engine.logs.isEmpty {
+                VStack(spacing: 16) {
+                    Spacer()
+                    ZStack {
+                        Circle()
+                            .fill(Color.accentColor.opacity(0.08))
+                            .frame(width: 80, height: 80)
+                        
+                        Image(systemName: "eyes")
+                            .font(.system(size: 32))
+                            .foregroundColor(.accentColor.opacity(0.6))
+                    }
+                    
+                    Text("Monitoring Prompts…")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                    
+                    Text("Auto-accept rules will execute silently when prompts appear in code editors or browsers.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 48)
+                    Spacer()
+                }
+                .transition(.opacity)
+            } else {
+                // Search Bar
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Search activity log...", text: $searchQuery)
                         .textFieldStyle(.plain)
-                        .font(.caption)
+                        .font(.system(size: 12))
+                    
                     if !searchQuery.isEmpty {
                         Button {
                             searchQuery = ""
                         } label: {
-                            Image(systemName: "xmark.circle.fill").font(.caption).foregroundColor(.secondary)
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 13))
+                                .foregroundColor(.secondary)
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color(NSColor.controlBackgroundColor)))
-                .padding(.horizontal, 12).padding(.vertical, 6)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(searchHovered ? 0.05 : 0.03))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.05), lineWidth: 1))
+                )
+                .onHover { hovering in searchHovered = hovering }
+                .padding(.horizontal, 16).padding(.vertical, 10)
 
                 List(filteredLogs) { log in
-                    HStack(spacing: 12) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green).font(.system(size: 15))
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.green.opacity(0.12))
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.green)
+                        }
+
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(log.targetText)
-                                    .font(.system(size: 13, weight: .bold))
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
                                     .lineLimit(1)
                                 Spacer()
                                 Text(log.formattedTime)
-                                    .font(.caption2).foregroundColor(.secondary)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.secondary)
                             }
-                            HStack(spacing: 6) {
-                                Text(log.appName).font(.caption).foregroundColor(.secondary)
-                                Text("·").font(.caption).foregroundColor(.secondary)
+
+                            HStack(spacing: 8) {
+                                Text(log.appName)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                
+                                Circle().fill(Color.secondary.opacity(0.4)).frame(width: 3, height: 3)
+                                
                                 Text(log.detectionMethod)
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .padding(.horizontal, 6).padding(.vertical, 2)
-                                    .background(Capsule().fill(Color.purple.opacity(0.12)))
+                                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                    .padding(.horizontal, 6).padding(.vertical, 1.5)
+                                    .background(Capsule().fill(Color.purple.opacity(0.1)))
                                     .foregroundColor(.purple)
                             }
                         }
                     }
-                    .padding(.vertical, 3)
+                    .padding(.vertical, 4)
+                    .listRowBackground(Color.clear)
                 }
                 .listStyle(.plain)
             }
@@ -278,43 +368,46 @@ struct RulesView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 20) {
 
-                // Section Header with Reset Defaults
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Custom Approval Rules").font(.headline)
-                        Text("Configure keywords for auto-clicking buttons and auto-ticking checkboxes.")
-                            .font(.caption).foregroundColor(.secondary)
+                // Header Card
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Custom Verification Bypass").font(.system(size: 15, weight: .bold, design: .rounded))
+                        Text("Add label keywords to auto-accept confirmation dialogs and alerts.")
+                            .font(.system(size: 11)).foregroundColor(.secondary)
                     }
                     Spacer()
-                    Button("Reset Defaults") {
-                        engine.resetRulesToDefault()
+                    
+                    Button("Reset to Defaults") {
+                        withAnimation {
+                            engine.resetRulesToDefault()
+                        }
                     }
-                    .buttonStyle(.bordered).controlSize(.small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.02)))
 
-                Divider()
-
-                // Section 1: Buttons
+                // Rules Sections
                 ruleSection(
-                    title: "Auto-Click Buttons",
-                    subtitle: "Buttons with these titles will be auto-clicked when prompted",
+                    title: "Button Auto-Click Keywords",
+                    subtitle: "Auto-clicks button controls with these exact labels (case-insensitive)",
                     keywords: engine.buttonRules,
                     newKeyword: $newBtn,
                     targetType: .button
                 )
 
-                // Section 2: Checkboxes
                 ruleSection(
-                    title: "Auto-Tick Checkboxes",
-                    subtitle: "Checkboxes with these labels will be auto-ticked before approving",
+                    title: "Checkbox Auto-Tick Keywords",
+                    subtitle: "Auto-selects checkbox labels prior to approving the action",
                     keywords: engine.checkboxRules,
                     newKeyword: $newChk,
                     targetType: .checkbox
                 )
             }
-            .padding(14)
+            .padding(16)
         }
     }
 
@@ -326,55 +419,347 @@ struct RulesView: View {
         newKeyword: Binding<String>,
         targetType: ApprovalRule.TargetType
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.subheadline).fontWeight(.bold)
-            Text(subtitle).font(.caption).foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
 
+            // Input Bar
             HStack {
-                TextField("Add new keyword (e.g. 'Trust')", text: newKeyword)
+                TextField("Add new keyword...", text: newKeyword)
                     .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+                
                 Button("Add") {
-                    engine.addRule(keyword: newKeyword.wrappedValue, targetType: targetType)
-                    newKeyword.wrappedValue = ""
+                    withAnimation {
+                        engine.addRule(keyword: newKeyword.wrappedValue, targetType: targetType)
+                        newKeyword.wrappedValue = ""
+                    }
                 }
-                .buttonStyle(.borderedProminent).controlSize(.small)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
                 .disabled(newKeyword.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
             }
 
-            FlowLayout(spacing: 6) {
-                ForEach(keywords) { rule in
-                    HStack(spacing: 5) {
-                        Button {
+            // Keyword Pills Grid
+            if keywords.isEmpty {
+                Text("No keywords defined.")
+                    .font(.caption).foregroundColor(.secondary)
+                    .padding(.vertical, 8)
+            } else {
+                FlowLayout(spacing: 6) {
+                    ForEach(keywords) { rule in
+                        KeywordChip(rule: rule, onToggle: {
                             engine.toggleRule(id: rule.id, targetType: targetType)
-                        } label: {
-                            Image(systemName: rule.isEnabled ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 11))
-                                .foregroundColor(rule.isEnabled ? .green : .secondary)
-                        }
-                        .buttonStyle(.plain)
-
-                        Text(rule.keyword)
-                            .font(.system(size: 12, weight: .medium))
-                            .strikethrough(!rule.isEnabled)
-                            .foregroundColor(rule.isEnabled ? .primary : .secondary)
-
-                        Button {
-                            engine.removeRule(id: rule.id, targetType: targetType)
-                        } label: {
-                            Image(systemName: "xmark").font(.system(size: 10))
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundColor(.secondary)
+                        }, onDelete: {
+                            withAnimation {
+                                engine.removeRule(id: rule.id, targetType: targetType)
+                            }
+                        })
                     }
-                    .padding(.horizontal, 9).padding(.vertical, 5)
-                    .background(
-                        Capsule().fill(rule.isEnabled ? Color.accentColor.opacity(0.12) : Color.gray.opacity(0.12))
-                    )
                 }
+                .padding(.top, 4)
             }
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor).opacity(0.5)))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.04), lineWidth: 1))
+    }
+}
+
+// MARK: - Keyword Pill Component
+
+struct KeywordChip: View {
+    let rule: ApprovalRule
+    let onToggle: () -> Void
+    let onDelete: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(action: onToggle) {
+                Image(systemName: rule.isEnabled ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 12))
+                    .foregroundColor(rule.isEnabled ? .green : .secondary)
+            }
+            .buttonStyle(.plain)
+
+            Text(rule.keyword)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .strikethrough(!rule.isEnabled)
+                .foregroundColor(rule.isEnabled ? .primary : .secondary)
+
+            Button(action: onDelete) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.7))
+                    .padding(3)
+                    .background(Circle().fill(Color.primary.opacity(isHovered ? 0.08 : 0.0)))
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in isHovered = hovering }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(
+            Capsule()
+                .fill(rule.isEnabled ? Color.accentColor.opacity(0.1) : Color.gray.opacity(0.08))
+        )
+        .overlay(
+            Capsule()
+                .stroke(rule.isEnabled ? Color.accentColor.opacity(0.1) : Color.clear, lineWidth: 1)
+        )
+        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isHovered)
+    }
+}
+
+// MARK: - Prompt Queue View
+
+struct PromptQueueView: View {
+    @ObservedObject var engine: ApproverEngine
+    @Binding var newPromptText: String
+    @State private var isAddHovered = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                
+                // Active Queue Toggle Card
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Prompt Queue Dispatch").font(.system(size: 13, weight: .bold, design: .rounded))
+                            Text("Sequentially paste prompts automatically when the agent window is free.")
+                                .font(.system(size: 11)).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $engine.isPromptQueueActive.animation(.spring()))
+                            .toggleStyle(SwitchToggleStyle(tint: .green))
+                            .labelsHidden()
+                            .controlSize(.small)
+                    }
+                    
+                    if engine.isPromptQueueActive {
+                        Divider().padding(.vertical, 2)
+                        
+                        HStack {
+                            Text("Status:").font(.system(size: 11, weight: .bold))
+                            if engine.currentPromptIndex < engine.promptQueue.count {
+                                Text("Active — Sending \(engine.currentPromptIndex + 1) of \(engine.promptQueue.count)")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(.green)
+                            } else {
+                                Text("Complete (Queue fully dispatched)")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            if engine.currentPromptIndex > 0 {
+                                Button("Restart Queue") {
+                                    withAnimation {
+                                        engine.currentPromptIndex = 0
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                        .transition(.opacity)
+                    }
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor).opacity(0.5)))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.04), lineWidth: 1))
+                
+                // Loop Mode Settings Card
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Loop Test Mode").font(.system(size: 13, weight: .bold, design: .rounded))
+                            Text("Repetitive stress-testing via sequential system auditing.")
+                                .font(.system(size: 11)).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $engine.loopModeEnabled.animation(.spring()))
+                            .toggleStyle(SwitchToggleStyle(tint: .green))
+                            .labelsHidden()
+                            .controlSize(.small)
+                    }
+                    
+                    if engine.loopModeEnabled {
+                        Divider().padding(.vertical, 2)
+                        
+                        HStack(spacing: 12) {
+                            Picker("Limit:", selection: Binding(
+                                get: { engine.loopModeLimit == 0 ? 0 : 10 },
+                                set: { engine.loopModeLimit = $0 }
+                            ).animation(.spring())) {
+                                Text("Infinite").tag(0)
+                                Text("10 Iterations").tag(10)
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 180)
+                            
+                            Spacer()
+                            
+                            HStack(spacing: 4) {
+                                Text("Dispatched:")
+                                    .font(.system(size: 11)).foregroundColor(.secondary)
+                                Text("\(engine.loopModeCounter)")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                Text("/ \(engine.loopModeLimit == 0 ? "∞" : String(engine.loopModeLimit))")
+                                    .font(.system(size: 11)).foregroundColor(.secondary)
+                            }
+                            
+                            Button("Reset") {
+                                engine.loopModeCounter = 0
+                            }
+                            .buttonStyle(.bordered).controlSize(.small)
+                        }
+                        .transition(.opacity)
+                    }
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor).opacity(0.5)))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.04), lineWidth: 1))
+
+                // Default System Audit Banner
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Label("System Audit Template", systemImage: "text.book.closed.fill")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.accentColor)
+                        Spacer()
+                        Button("Restore Default") {
+                            withAnimation {
+                                engine.resetPromptQueueToDefault()
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.accentColor)
+                    }
+                    Text(ApproverEngine.defaultPrompt)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                        .padding(8)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.03)))
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.01)))
+
+                // Add to Queue Section
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Add New Custom Prompt").font(.system(size: 12, weight: .bold, design: .rounded))
+                    
+                    TextEditor(text: $newPromptText)
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(height: 75)
+                        .padding(6)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor).opacity(0.6)))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+                    
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            withAnimation {
+                                engine.promptQueue.append(newPromptText.trimmingCharacters(in: .whitespacesAndNewlines))
+                                newPromptText = ""
+                            }
+                        }) {
+                            Text("Queue Prompt")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 14).padding(.vertical, 6)
+                                .background(Capsule().fill(Color.accentColor.opacity(newPromptText.isEmpty ? 0.5 : 1.0)))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(newPromptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor).opacity(0.5)))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.04), lineWidth: 1))
+
+                // Queue List
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Configured Queue").font(.system(size: 12, weight: .bold, design: .rounded))
+                        Spacer()
+                        if !engine.promptQueue.isEmpty {
+                            Button("Clear All") {
+                                withAnimation {
+                                    engine.promptQueue.removeAll()
+                                    engine.currentPromptIndex = 0
+                                    engine.isPromptQueueActive = false
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.red)
+                        }
+                    }
+                    
+                    if engine.promptQueue.isEmpty {
+                        Text("Queue is empty. Enter a prompt above to schedule.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .padding(.vertical, 24)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.01)))
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(Array(engine.promptQueue.enumerated()), id: \.offset) { index, prompt in
+                                HStack(alignment: .top, spacing: 10) {
+                                    Circle()
+                                        .fill(index < engine.currentPromptIndex ? Color.gray : index == engine.currentPromptIndex && engine.isPromptQueueActive ? Color.green : Color.blue)
+                                        .frame(width: 8, height: 8)
+                                        .padding(.top, 5)
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Prompt \(index + 1)")
+                                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                                            .foregroundColor(index < engine.currentPromptIndex ? .secondary : .primary)
+                                        Text(prompt)
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .lineLimit(2)
+                                            .foregroundColor(index < engine.currentPromptIndex ? .secondary : .primary.opacity(0.8))
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Button {
+                                        withAnimation {
+                                            engine.promptQueue.remove(at: index)
+                                            if engine.currentPromptIndex > index {
+                                                engine.currentPromptIndex = max(0, engine.currentPromptIndex - 1)
+                                            }
+                                        }
+                                    } label: {
+                                        Image(systemName: "trash").font(.system(size: 11))
+                                            .foregroundColor(.secondary.opacity(0.8))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(8)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.02)))
+                            }
+                        }
+                    }
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor).opacity(0.5)))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.04), lineWidth: 1))
+            }
+            .padding(16)
+        }
     }
 }
 
@@ -411,217 +796,6 @@ struct VisualEffectView: NSViewRepresentable {
     func updateNSView(_ v: NSVisualEffectView, context: Context) { v.material = material; v.blendingMode = blendingMode }
 }
 
-struct PromptQueueView: View {
-    @ObservedObject var engine: ApproverEngine
-    @Binding var newPromptText: String
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                
-                // ── Section 1: Prompt Queue Automation ─────────────────────────────────────
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Prompt Queue Automation").font(.subheadline).fontWeight(.bold)
-                            Text("Automatically paste sequential prompts when the agent becomes free.")
-                                .font(.caption).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Toggle("", isOn: $engine.isPromptQueueActive)
-                            .toggleStyle(SwitchToggleStyle(tint: .green))
-                            .labelsHidden()
-                    }
-                    
-                    if engine.isPromptQueueActive {
-                        Divider().padding(.vertical, 2)
-                        
-                        // Status details
-                        HStack {
-                            Text("Status:").font(.caption).fontWeight(.semibold)
-                            if engine.currentPromptIndex < engine.promptQueue.count {
-                                Text("Active (Pasting \(engine.currentPromptIndex + 1)/\(engine.promptQueue.count))")
-                                    .font(.caption).foregroundColor(.green).fontWeight(.medium)
-                            } else {
-                                Text("Completed (All prompts sent)")
-                                    .font(.caption).foregroundColor(.gray)
-                            }
-                            Spacer()
-                            if engine.currentPromptIndex > 0 {
-                                Button("Reset Index") {
-                                    engine.currentPromptIndex = 0
-                                }
-                                .buttonStyle(.bordered).controlSize(.small)
-                            }
-                        }
-                    }
-                }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
-                
-                // ── Section 2: Loop Mode (Auto-Paste) ──────────────────────────────────────
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Loop Mode (Infinite/Repeat)").font(.subheadline).fontWeight(.bold)
-                            Text("Repeatedly paste the default system audit prompt when the agent is free.")
-                                .font(.caption).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Toggle("", isOn: $engine.loopModeEnabled)
-                            .toggleStyle(SwitchToggleStyle(tint: .green))
-                            .labelsHidden()
-                    }
-                    
-                    if engine.loopModeEnabled {
-                        Divider().padding(.vertical, 2)
-                        
-                        HStack(spacing: 12) {
-                            Picker("Limit:", selection: Binding(
-                                get: { engine.loopModeLimit == 0 ? 0 : 10 },
-                                set: { engine.loopModeLimit = $0 }
-                            )) {
-                                Text("Infinite Loop").tag(0)
-                                Text("10 Iterations").tag(10)
-                            }
-                            .pickerStyle(.segmented)
-                            .frame(width: 220)
-                            
-                            Spacer()
-                            
-                            HStack(spacing: 4) {
-                                Text("Sent:")
-                                    .font(.caption).foregroundColor(.secondary)
-                                Text("\(engine.loopModeCounter)")
-                                    .font(.system(size: 11, weight: .bold))
-                                if engine.loopModeLimit > 0 {
-                                    Text("/ \(engine.loopModeLimit)")
-                                        .font(.caption).foregroundColor(.secondary)
-                                } else {
-                                    Text("/ ∞")
-                                        .font(.caption).foregroundColor(.secondary)
-                                }
-                            }
-                            
-                            Button("Reset Count") {
-                                engine.loopModeCounter = 0
-                            }
-                            .buttonStyle(.bordered).controlSize(.small)
-                        }
-                    }
-                }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
-
-                // ── Section 3: Default Prompt Reference ───────────────────────────────────
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("💡 Default System-Audit Prompt").font(.caption).fontWeight(.bold).foregroundColor(.accentColor)
-                        Spacer()
-                        Button("Load Default & Run Queue") {
-                            engine.resetPromptQueueToDefault()
-                        }
-                        .buttonStyle(.bordered).controlSize(.small)
-                    }
-                    Text(ApproverEngine.defaultPrompt)
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                        .lineLimit(3)
-                        .padding(8)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.05)))
-                }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
-
-                // ── Section 4: Add New Prompt ─────────────────────────────────────────────
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Add New Prompt to Queue").font(.caption).fontWeight(.bold)
-                    TextEditor(text: $newPromptText)
-                        .frame(height: 70)
-                        .padding(4)
-                        .background(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.2)))
-                    
-                    HStack {
-                        Spacer()
-                        Button("Add to Queue") {
-                            engine.promptQueue.append(newPromptText.trimmingCharacters(in: .whitespacesAndNewlines))
-                            newPromptText = ""
-                        }
-                        .buttonStyle(.borderedProminent).controlSize(.small)
-                        .disabled(newPromptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
-
-                // ── Section 5: Queue List ─────────────────────────────────────────────────
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Queue List").font(.caption).fontWeight(.bold)
-                        Spacer()
-                        if !engine.promptQueue.isEmpty {
-                            Button("Clear Queue") {
-                                engine.promptQueue.removeAll()
-                                engine.currentPromptIndex = 0
-                                engine.isPromptQueueActive = false
-                            }
-                            .buttonStyle(.plain).font(.caption).foregroundColor(.red)
-                        }
-                    }
-                    
-                    if engine.promptQueue.isEmpty {
-                        VStack {
-                            Spacer()
-                            Text("Queue is empty. Add a prompt above to get started!")
-                                .font(.caption).foregroundColor(.secondary)
-                                .padding(.vertical, 20)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                            Spacer()
-                        }
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
-                    } else {
-                        List {
-                            ForEach(Array(engine.promptQueue.enumerated()), id: \.offset) { index, prompt in
-                                HStack(alignment: .top, spacing: 10) {
-                                    Circle()
-                                        .fill(index < engine.currentPromptIndex ? Color.gray : index == engine.currentPromptIndex && engine.isPromptQueueActive ? Color.green : Color.blue)
-                                        .frame(width: 8, height: 8)
-                                        .padding(.top, 5)
-                                    
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Prompt \(index + 1)")
-                                            .font(.caption).fontWeight(.bold)
-                                            .foregroundColor(index < engine.currentPromptIndex ? .secondary : .primary)
-                                        Text(prompt)
-                                            .font(.system(size: 11))
-                                            .lineLimit(3)
-                                            .foregroundColor(index < engine.currentPromptIndex ? .secondary : .primary)
-                                    }
-                                    Spacer()
-                                    
-                                    Button {
-                                        engine.promptQueue.remove(at: index)
-                                        if engine.currentPromptIndex > index {
-                                            engine.currentPromptIndex = max(0, engine.currentPromptIndex - 1)
-                                        }
-                                    } label: {
-                                        Image(systemName: "trash").font(.caption2)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .foregroundColor(.secondary)
-                                }
-                                .padding(.vertical, 4)
-                            }
-                        }
-                        .listStyle(.plain)
-                        .frame(height: 120)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
-                    }
-                }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
-            }
-            .padding(14)
-        }
-    }
+extension Color {
+    static let emerald = Color(red: 16/255, green: 185/255, blue: 129/255)
 }

@@ -48,7 +48,6 @@ public final class ApproverEngine: ObservableObject {
 
     // MARK: - Private State
 
-    private let axQueue = DispatchQueue(label: "com.nointeraction.ax", qos: .userInitiated)
     private var timer: Timer?
     private var lastActionTime: Date = .distantPast
     private let cooldown: TimeInterval = 1.2
@@ -78,6 +77,7 @@ Your objective is to optimize this application to the absolute highest tier of s
         loadSettingsAndRules()
         refreshAccessibilityStatus()
         startTimer()
+        setupWorkspaceNotifications()
     }
 
     // MARK: - Persistence
@@ -146,27 +146,46 @@ Your objective is to optimize this application to the absolute highest tier of s
     public func refreshAccessibilityStatus() {
         let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
         let granted = AXIsProcessTrustedWithOptions(options)
-        DispatchQueue.main.async {
-            if granted != self.isAccessibilityGranted {
-                self.isAccessibilityGranted = granted
-            }
+        if granted != self.isAccessibilityGranted {
+            self.isAccessibilityGranted = granted
         }
     }
 
     public func promptAccessibilityPermission() {
         let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
         _ = AXIsProcessTrustedWithOptions(options)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.refreshAccessibilityStatus() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            Task { @MainActor in
+                self?.refreshAccessibilityStatus()
+            }
+        }
     }
 
     // MARK: - Scan Loop
 
     public func startTimer() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
-            self?.scheduleScan()
+        // Run checks every 1.5 seconds for improved responsiveness, scaling up when app is active
+        timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.scheduleScan()
+            }
         }
         RunLoop.main.add(timer!, forMode: .common)
+    }
+
+    private func setupWorkspaceNotifications() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleWorkspaceNotification),
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleWorkspaceNotification(_ notification: Notification) {
+        // Immediate scan on app switch
+        scheduleScan()
     }
 
     private func scheduleScan() {
@@ -183,71 +202,75 @@ Your objective is to optimize this application to the absolute highest tier of s
 
         print("🔄 scheduleScan running. Target apps found: \(targetApps.map { $0.localizedName ?? "" })")
 
-        axQueue.async { [weak self] in
-            guard let self else { return }
+        // Perform scan sequentially for each target application
+        for app in targetApps {
+            let pid = app.processIdentifier
+            let appName = app.localizedName ?? "Anti-Gravity"
 
-            var agentIsBusy = false
-            var chatInputElement: AXUIElement? = nil
-            var targetAppToActivate: NSRunningApplication? = nil
+            Task {
+                // Pass 1: AXPress / AXClick (runs tree traversal in detached background task)
+                let result = await Task.detached(priority: .userInitiated) {
+                    return AXInspector.shared.inspectAndAutoApprove(
+                        pid: pid,
+                        buttonKeywords: buttons,
+                        checkboxKeywords: checkboxes
+                    )
+                }.value
 
-            for app in targetApps {
-                let pid     = app.processIdentifier
-                let appName = app.localizedName ?? "Anti-Gravity"
-
-                // Pass 1: AXPress / AXClick (Native accessibility action — 100% silent, 0% cursor movement)
-                if let result = AXInspector.shared.inspectAndAutoApprove(
-                    pid: pid,
-                    buttonKeywords: buttons,
-                    checkboxKeywords: checkboxes
-                ) {
-                    Task { @MainActor in
-                        self.lastActionTime = Date()
-
-                        if result.action == "Fallback CGEvent Click Needed", let pt = result.position {
-                            ClickAutomation.shared.performClick(at: pt, targetPid: pid) {
-                                Task { @MainActor in
-                                    self.record(appName: appName, text: result.elementText, method: "AX + CGClick")
-                                }
+                if let result = result {
+                    self.lastActionTime = Date()
+                    if result.action == "Fallback CGEvent Click Needed", let pt = result.position {
+                        ClickAutomation.shared.performClick(at: pt, targetPid: pid) {
+                            Task { @MainActor in
+                                self.record(appName: appName, text: result.elementText, method: "AX + CGClick")
                             }
-                        } else {
-                            self.record(appName: appName, text: result.elementText, method: result.action)
                         }
+                    } else {
+                        self.record(appName: appName, text: result.elementText, method: result.action)
                     }
                     return
                 }
 
                 // Prompt Queue Check or Loop Mode Check
-                let shouldCheckPromptState = DispatchQueue.main.sync {
-                    (self.isPromptQueueActive && self.currentPromptIndex < self.promptQueue.count) ||
-                    (self.loopModeEnabled && (self.loopModeLimit == 0 || self.loopModeCounter < self.loopModeLimit))
-                }
+                let shouldCheckPromptState = (self.isPromptQueueActive && self.currentPromptIndex < self.promptQueue.count) ||
+                                             (self.loopModeEnabled && (self.loopModeLimit == 0 || self.loopModeCounter < self.loopModeLimit))
 
                 if shouldCheckPromptState {
-                    let axApp = AXUIElementCreateApplication(pid)
-                    var windowsRef: CFTypeRef?
-                    if AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-                       let windows = windowsRef as? [AXUIElement] {
-                        let filteredWindows = AppObserver.shared.isBrowser(app)
-                            ? windows.filter { AppObserver.shared.isAntigravityWindow($0) }
-                            : windows
+                    let chatState = await Task.detached(priority: .userInitiated) { () -> AXInspector.ChatStateResult in
+                        let axApp = AXUIElementCreateApplication(pid)
+                        var windowsRef: CFTypeRef?
+                        var isBusy = false
+                        var inputArea: AXUIElement? = nil
                         
-                        for win in filteredWindows {
-                            let state = AXInspector.shared.findChatInputAndStatus(in: win, depth: 0)
-                            print("🔍 Inspected App: \(appName), Window: \(win), ChatInput: \(state.inputArea != nil), Busy: \(state.isBusy)")
-                            if state.isBusy {
-                                agentIsBusy = true
-                            }
-                            if let input = state.inputArea {
-                                chatInputElement = input
-                                targetAppToActivate = app
+                        if AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+                           let windows = windowsRef as? [AXUIElement] {
+                            let filteredWindows = AppObserver.shared.isBrowser(app)
+                                ? windows.filter { AppObserver.shared.isAntigravityWindow($0) }
+                                : windows
+                            
+                            for win in filteredWindows {
+                                let state = AXInspector.shared.findChatInputAndStatus(in: win, depth: 0)
+                                if state.isBusy {
+                                    isBusy = true
+                                }
+                                if let input = state.inputArea {
+                                    inputArea = input
+                                }
                             }
                         }
+                        return AXInspector.ChatStateResult(inputArea: inputArea, isBusy: isBusy)
+                    }.value
+
+                    if !chatState.isBusy, let input = chatState.inputArea {
+                        let prompt = self.loopModeEnabled ? ApproverEngine.defaultPrompt : self.promptQueue[self.currentPromptIndex]
+                        await self.pastePrompt(prompt: prompt, toInput: input, forApp: app)
+                        return
                     }
                 }
 
                 // Pass 2: Vision OCR (Fallback if AX is blocked)
-                guard !self.visionScanInFlight else { continue }
-                guard let bounds = AppObserver.shared.getWindowBounds(for: app) else { continue }
+                guard !self.visionScanInFlight else { return }
+                guard let bounds = AppObserver.shared.getWindowBounds(for: app) else { return }
 
                 self.visionScanInFlight = true
                 let capturedPid = pid
@@ -257,10 +280,9 @@ Your objective is to optimize this application to the absolute highest tier of s
                     buttonKeywords: buttons
                 ) { [weak self] clickPoint, matchedText in
                     guard let self else { return }
-                    self.visionScanInFlight = false
-                    guard let pt = clickPoint, let text = matchedText else { return }
-                    
                     Task { @MainActor in
+                        self.visionScanInFlight = false
+                        guard let pt = clickPoint, let text = matchedText else { return }
                         guard Date().timeIntervalSince(self.lastActionTime) >= self.cooldown else { return }
                         self.lastActionTime = Date()
 
@@ -272,103 +294,61 @@ Your objective is to optimize this application to the absolute highest tier of s
                     }
                 }
             }
+        }
+    }
 
-            // Execute next prompt from queue if agent is free and queue is active
-            Task { @MainActor in
-                if self.isPromptQueueActive && !agentIsBusy && self.currentPromptIndex < self.promptQueue.count,
-                   let input = chatInputElement, let app = targetAppToActivate {
-                    let prompt = self.promptQueue[self.currentPromptIndex]
-                    self.currentPromptIndex += 1
-                    
-                    print("🤖 Prompt Queue: Pasting prompt \(self.currentPromptIndex)/\(self.promptQueue.count)")
-                    
-                    // Activate the app to receive keyboard events
-                    app.activate(options: .activateIgnoringOtherApps)
-                    Thread.sleep(forTimeInterval: 0.2)
-                    
-                    // Focus the text area by clicking it
-                    if let center = AXInspector.shared.centerOf(input) {
-                        print("🎯 Clicking center of chat input area at: \(center) for app: \(app.localizedName ?? "")")
-                        ClickAutomation.shared.performClick(at: center, targetPid: app.processIdentifier) {
-                            Thread.sleep(forTimeInterval: 0.25)
-                            
-                            // Copy prompt to pasteboard
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(prompt, forType: .string)
-                            Thread.sleep(forTimeInterval: 0.15)
-                            
-                            // Simulate CMD+V paste
-                            print("📋 Pasting prompt...")
-                            AXInspector.shared.pressPasteKeystroke()
-                            Thread.sleep(forTimeInterval: 0.2)
-                            
-                            // Submit by pressing Return
-                            print("⌨️ Pressing Return key...")
-                            AXInspector.shared.pressReturnKey()
-                        }
-                    }
-                    
-                    // Set last action time to prevent immediately scanning again
-                    self.lastActionTime = Date()
-                } else if self.loopModeEnabled && !agentIsBusy && (self.loopModeLimit == 0 || self.loopModeCounter < self.loopModeLimit),
-                          let input = chatInputElement, let app = targetAppToActivate {
-                    
-                    let prompt = ApproverEngine.defaultPrompt
-                    self.loopModeCounter += 1
-                    
-                    print("🤖 Loop Mode: Pasting prompt \(self.loopModeCounter)/\(self.loopModeLimit == 0 ? "∞" : String(self.loopModeLimit))")
-                    
-                    // Activate the app to receive keyboard events
-                    app.activate(options: .activateIgnoringOtherApps)
-                    Thread.sleep(forTimeInterval: 0.2)
-                    
-                    // Focus the text area by clicking it
-                    if let center = AXInspector.shared.centerOf(input) {
-                        print("🎯 Clicking center of chat input area at: \(center) for app: \(app.localizedName ?? "")")
-                        ClickAutomation.shared.performClick(at: center, targetPid: app.processIdentifier) {
-                            Thread.sleep(forTimeInterval: 0.25)
-                            
-                            // Copy prompt to pasteboard
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(prompt, forType: .string)
-                            Thread.sleep(forTimeInterval: 0.15)
-                            
-                            // Simulate CMD+V paste
-                            print("📋 Pasting loop prompt...")
-                            AXInspector.shared.pressPasteKeystroke()
-                            Thread.sleep(forTimeInterval: 0.2)
-                            
-                            // Submit by pressing Return
-                            print("⌨️ Pressing Return key...")
-                            AXInspector.shared.pressReturnKey()
-                        }
-                    }
-                    
-                    // Set last action time to prevent immediately scanning again
-                    self.lastActionTime = Date()
+    private func pastePrompt(prompt: String, toInput input: AXUIElement, forApp app: NSRunningApplication) async {
+        if self.loopModeEnabled {
+            self.loopModeCounter += 1
+            print("🤖 Loop Mode: Pasting prompt \(self.loopModeCounter)/\(self.loopModeLimit == 0 ? "∞" : String(self.loopModeLimit))")
+        } else {
+            self.currentPromptIndex += 1
+            print("🤖 Prompt Queue: Pasting prompt \(self.currentPromptIndex)/\(self.promptQueue.count)")
+        }
+        self.lastActionTime = Date()
+
+        app.activate(options: .activateIgnoringOtherApps)
+        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2s
+
+        if let center = AXInspector.shared.centerOf(input) {
+            print("🎯 Clicking center of chat input area at: \(center) for app: \(app.localizedName ?? "")")
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                ClickAutomation.shared.performClick(at: center, targetPid: app.processIdentifier) {
+                    continuation.resume()
                 }
             }
+
+            try? await Task.sleep(nanoseconds: 250_000_000) // 0.25s
+
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(prompt, forType: .string)
+            try? await Task.sleep(nanoseconds: 150_000_000) // 0.15s
+
+            print("📋 Pasting prompt...")
+            AXInspector.shared.pressPasteKeystroke()
+            try? await Task.sleep(nanoseconds: 200_000_000) // 0.2s
+
+            print("⌨️ Pressing Return key...")
+            AXInspector.shared.pressReturnKey()
         }
     }
 
     // MARK: - Logging & Audio Feedback
 
     private func record(appName: String, text: String, method: String) {
-        DispatchQueue.main.async {
-            self.totalApprovalsCount += 1
-            let entry = LogEntry(
-                appName: appName,
-                actionTaken: "Auto-Approved",
-                targetText: text,
-                detectionMethod: method
-            )
-            self.logs.insert(entry, at: 0)
-            if self.logs.count > 200 { self.logs = Array(self.logs.prefix(200)) }
-            MenuBarManager.shared.rebuildMenu()
+        self.totalApprovalsCount += 1
+        let entry = LogEntry(
+            appName: appName,
+            actionTaken: "Auto-Approved",
+            targetText: text,
+            detectionMethod: method
+        )
+        self.logs.insert(entry, at: 0)
+        if self.logs.count > 200 { self.logs = Array(self.logs.prefix(200)) }
+        MenuBarManager.shared.rebuildMenu()
 
-            if self.soundEnabled {
-                NSSound(named: "Tink")?.play()
-            }
+        if self.soundEnabled {
+            NSSound(named: "Tink")?.play()
         }
     }
 

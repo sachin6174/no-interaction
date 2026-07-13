@@ -47,8 +47,10 @@ class ApproverEngine:
         self.logs: list[LogEntry] = []
 
         self._rules_lock = threading.Lock()
+        self._logs_lock = threading.Lock()
         self._last_action_time = 0.0
         self._ocr_scan_in_flight = False
+        self._scan_interval = SCAN_INTERVAL_SECONDS
 
         self._listeners: list[Callable[[], None]] = []
         self._stop_event = threading.Event()
@@ -95,13 +97,17 @@ class ApproverEngine:
     def total_approvals_count(self) -> int:
         return self._total_approvals_count
 
+    def get_logs(self) -> list[LogEntry]:
+        with self._logs_lock:
+            return list(self.logs)
+
     def stop(self) -> None:
         self._stop_event.set()
 
     # MARK: Scan loop
 
     def _run_loop(self) -> None:
-        while not self._stop_event.wait(SCAN_INTERVAL_SECONDS):
+        while not self._stop_event.wait(self._scan_interval):
             try:
                 self._scan_tick()
             except Exception as e:
@@ -121,7 +127,12 @@ class ApproverEngine:
 
         observer = AppObserver.shared()
         target_apps = observer.find_target_applications()
-        if not target_apps:
+        
+        # Scale scanning interval dynamically to save CPU cycles
+        if target_apps:
+            self._scan_interval = 1.0  # scan faster (every 1s) when targets are running
+        else:
+            self._scan_interval = SCAN_INTERVAL_SECONDS  # fall back to 3.0s when idle
             return
 
         inspector = AtspiInspector.shared()
@@ -177,9 +188,10 @@ class ApproverEngine:
         self._settings.save()
 
         entry = LogEntry(app_name=app_name, target_text=text, detection_method=method)
-        self.logs.insert(0, entry)
-        if len(self.logs) > MAX_LOG_ENTRIES:
-            del self.logs[MAX_LOG_ENTRIES:]
+        with self._logs_lock:
+            self.logs.insert(0, entry)
+            if len(self.logs) > MAX_LOG_ENTRIES:
+                del self.logs[MAX_LOG_ENTRIES:]
 
         if self._sound_enabled:
             self._play_sound()
@@ -236,7 +248,8 @@ class ApproverEngine:
         self._notify()
 
     def clear_logs(self) -> None:
-        self.logs.clear()
+        with self._logs_lock:
+            self.logs.clear()
         self._notify()
 
     def _save_rules(self) -> None:

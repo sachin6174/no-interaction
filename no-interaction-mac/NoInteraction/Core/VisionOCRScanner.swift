@@ -5,6 +5,9 @@ public final class VisionOCRScanner {
     public static let shared = VisionOCRScanner()
     private init() {}
 
+    private let cacheLock = NSLock()
+    private var lastCapturedData: Data?
+
     // MARK: – Public
 
     /// Scans the bottom strip of the Anti-Gravity window for button labels.
@@ -17,6 +20,26 @@ public final class VisionOCRScanner {
     ) {
         let targetRect = buttonStripRect(from: windowBounds)
         guard let cgImage = captureScreenRegion(rect: targetRect) else {
+            DispatchQueue.main.async { completion(nil, nil) }
+            return
+        }
+
+        // Fast-path: Skip OCR if the screenshot data has not changed
+        let hasChanged: Bool = {
+            guard let dataProvider = cgImage.dataProvider,
+                  let cfData = dataProvider.data else { return true }
+            let currentData = cfData as Data
+            
+            cacheLock.lock()
+            defer { cacheLock.unlock() }
+            if let last = lastCapturedData, last == currentData {
+                return false
+            }
+            lastCapturedData = currentData
+            return true
+        }()
+
+        if !hasChanged {
             DispatchQueue.main.async { completion(nil, nil) }
             return
         }

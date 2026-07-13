@@ -22,7 +22,8 @@ namespace NoInteraction.Core
     public sealed class OcrScanner
     {
         public static readonly OcrScanner Shared = new();
-        private OcrScanner() { }
+        private string? _lastImageHash;
+        private readonly object _hashLock = new();
 
         public async Task<(Point? point, string? text)> ScanRegionForKeywordsAsync(Rect windowBounds, System.Collections.Generic.List<string> buttonKeywords)
         {
@@ -31,6 +32,16 @@ namespace NoInteraction.Core
 
             using var bitmap = CaptureScreenRegion(targetRect);
             if (bitmap == null) return (null, null);
+
+            var hash = ComputeBitmapHash(bitmap);
+            lock (_hashLock)
+            {
+                if (_lastImageHash == hash)
+                {
+                    return (null, null); // Skip OCR scan if the screen region has not changed
+                }
+                _lastImageHash = hash;
+            }
 
             var engine = OcrEngine.TryCreateFromUserProfileLanguages();
             if (engine == null) return (null, null);
@@ -102,6 +113,25 @@ namespace NoInteraction.Core
             catch
             {
                 return null;
+            }
+        }
+
+        private string ComputeBitmapHash(Bitmap bmp)
+        {
+            var rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
+            var bmpData = bmp.LockBits(rect, ImageLockMode.ReadOnly, bmp.PixelFormat);
+            try
+            {
+                int bytes = Math.Abs(bmpData.Stride) * bmp.Height;
+                byte[] rgbValues = new byte[bytes];
+                System.Runtime.InteropServices.Marshal.Copy(bmpData.Scan0, rgbValues, 0, bytes);
+                using var md5 = System.Security.Cryptography.MD5.Create();
+                var hashBytes = md5.ComputeHash(rgbValues);
+                return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+            }
+            finally
+            {
+                bmp.UnlockBits(bmpData);
             }
         }
     }

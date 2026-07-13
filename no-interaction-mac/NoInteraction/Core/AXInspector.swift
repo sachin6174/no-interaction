@@ -5,6 +5,9 @@ public final class AXInspector {
     public static let shared = AXInspector()
     private init() {}
 
+    private static let enabledPidsLock = NSLock()
+    private static var enabledPids = Set<pid_t>()
+
     public struct InspectionResult {
         public let action: String
         public let elementText: String
@@ -20,9 +23,21 @@ public final class AXInspector {
     ) -> InspectionResult? {
         let axApp = AXUIElementCreateApplication(pid)
 
-        // Force Electron / Chromium to enable native accessibility trees
-        AXUIElementSetAttributeValue(axApp, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
-        AXUIElementSetAttributeValue(axApp, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        let isAlreadyEnabled: Bool = {
+            AXInspector.enabledPidsLock.lock()
+            defer { AXInspector.enabledPidsLock.unlock() }
+            return AXInspector.enabledPids.contains(pid)
+        }()
+
+        if !isAlreadyEnabled {
+            // Force Electron / Chromium to enable native accessibility trees
+            AXUIElementSetAttributeValue(axApp, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+            AXUIElementSetAttributeValue(axApp, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+            AXInspector.enabledPidsLock.lock()
+            AXInspector.enabledPids.insert(pid)
+            AXInspector.enabledPidsLock.unlock()
+            print("👁️ AXInspector: Enabled AXEnhancedUserInterface and AXManualAccessibility for pid \(pid)")
+        }
 
         var windowsRef: CFTypeRef?
         var windows: [AXUIElement] = []

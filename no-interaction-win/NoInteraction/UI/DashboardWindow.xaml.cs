@@ -47,7 +47,6 @@ namespace NoInteraction.UI
                     l.DetectionMethod.ToLowerInvariant().Contains(query));
             LogListView.ItemsSource = items.ToList();
         }
-
         private void RenderRules(ItemsControl host, System.Collections.ObjectModel.ObservableCollection<ApprovalRule> rules, TargetType targetType)
         {
             var wrap = new WrapPanel();
@@ -55,10 +54,12 @@ namespace NoInteraction.UI
             {
                 var chip = new Border
                 {
-                    CornerRadius = new CornerRadius(10),
-                    Background = rule.IsEnabled ? new SolidColorBrush(Color.FromArgb(30, 0, 120, 215)) : new SolidColorBrush(Color.FromArgb(20, 128, 128, 128)),
+                    CornerRadius = new CornerRadius(12),
+                    Background = rule.IsEnabled ? new SolidColorBrush(Color.FromArgb(30, 203, 166, 247)) : new SolidColorBrush(Color.FromArgb(15, 128, 128, 128)),
+                    BorderBrush = rule.IsEnabled ? new SolidColorBrush(Color.FromRgb(203, 166, 247)) : new SolidColorBrush(Color.FromRgb(69, 71, 90)),
+                    BorderThickness = new Thickness(1),
                     Margin = new Thickness(0, 0, 6, 6),
-                    Padding = new Thickness(8, 4, 8, 4)
+                    Padding = new Thickness(10, 5, 10, 5)
                 };
                 var panel = new StackPanel { Orientation = Orientation.Horizontal };
 
@@ -66,9 +67,11 @@ namespace NoInteraction.UI
                 {
                     Content = rule.IsEnabled ? "✓" : "○",
                     Padding = new Thickness(2),
-                    Margin = new Thickness(0, 0, 4, 0),
+                    Margin = new Thickness(0, 0, 6, 0),
                     BorderThickness = new Thickness(0),
-                    Background = Brushes.Transparent
+                    Background = Brushes.Transparent,
+                    Foreground = rule.IsEnabled ? new SolidColorBrush(Color.FromRgb(166, 227, 161)) : new SolidColorBrush(Color.FromRgb(148, 156, 187)),
+                    Cursor = System.Windows.Input.Cursors.Hand
                 };
                 toggleBtn.Click += (_, _) => _engine.ToggleRule(rule.Id, targetType);
 
@@ -77,17 +80,20 @@ namespace NoInteraction.UI
                     Text = rule.Keyword,
                     VerticalAlignment = VerticalAlignment.Center,
                     TextDecorations = rule.IsEnabled ? null : TextDecorations.Strikethrough,
-                    Foreground = rule.IsEnabled ? Brushes.Black : Brushes.Gray
+                    Foreground = rule.IsEnabled ? new SolidColorBrush(Color.FromRgb(205, 214, 244)) : new SolidColorBrush(Color.FromRgb(108, 112, 134)),
+                    FontWeight = rule.IsEnabled ? FontWeights.SemiBold : FontWeights.Normal,
+                    FontSize = 11.5
                 };
 
                 var removeBtn = new Button
                 {
                     Content = "✕",
                     Padding = new Thickness(2),
-                    Margin = new Thickness(4, 0, 0, 0),
+                    Margin = new Thickness(6, 0, 0, 0),
                     BorderThickness = new Thickness(0),
                     Background = Brushes.Transparent,
-                    Foreground = Brushes.Gray
+                    Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168)),
+                    Cursor = System.Windows.Input.Cursors.Hand
                 };
                 removeBtn.Click += (_, _) => _engine.RemoveRule(rule.Id, targetType);
 
@@ -100,7 +106,6 @@ namespace NoInteraction.UI
             host.Items.Clear();
             host.Items.Add(wrap);
         }
-
         private void EnabledToggle_Click(object sender, RoutedEventArgs e) => _engine.IsEnabled = EnabledToggle.IsChecked == true;
         private void SoundButton_Click(object sender, RoutedEventArgs e) => _engine.SoundEnabled = !_engine.SoundEnabled;
         private void ClearLog_Click(object sender, RoutedEventArgs e) => _engine.Logs.Clear();

@@ -9,6 +9,8 @@ from typing import Optional
 from .models import KeywordMatcher
 
 
+import threading
+
 class OcrScanner:
     _instance: Optional["OcrScanner"] = None
 
@@ -17,6 +19,10 @@ class OcrScanner:
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
+
+    def __init__(self):
+        self._last_hash = None
+        self._lock = threading.Lock()
 
     def scan_region_for_keywords(
         self, window_bounds: tuple[int, int, int, int], button_keywords: list[str]
@@ -28,9 +34,20 @@ class OcrScanner:
         try:
             import mss
             from PIL import Image
+            import hashlib
 
             with mss.mss() as sct:
                 shot = sct.grab({"left": x, "top": y, "width": w, "height": h})
+                
+                # Check MD5 hash of raw screen data to skip OCR if unchanged
+                raw_bytes = shot.raw
+                current_hash = hashlib.md5(raw_bytes).hexdigest()
+                
+                with self._lock:
+                    if self._last_hash == current_hash:
+                        return None, None
+                    self._last_hash = current_hash
+                
                 img = Image.frombytes("RGB", shot.size, shot.rgb)
         except Exception as e:
             print(f"[OcrScanner] Screen capture failed: {e}")

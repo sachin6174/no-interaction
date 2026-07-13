@@ -15,7 +15,7 @@ namespace NoInteraction.Core
     /// log, and the periodic scan loop. Intentionally does not include the Mac app's
     /// Prompt Queue / Loop Mode auto-paste feature.
     /// </summary>
-    public sealed class ApproverEngine : INotifyPropertyChanged
+    public sealed class ApproverEngine : INotifyPropertyChanged, IDisposable
     {
         public static readonly ApproverEngine Shared = new();
 
@@ -110,16 +110,26 @@ namespace NoInteraction.Core
             if (!IsEnabled) return;
             if (DateTime.Now - _lastActionTime < _cooldown) return;
 
-            List<string> buttons, checkboxes;
-            lock (_scanLock)
+            var targetApps = AppObserver.Shared.FindTargetApplications();
+            if (targetApps.Count == 0)
+            {
+                // Slow down scan frequency when no target applications are running
+                _timer.Change(TimeSpan.FromSeconds(3.5), TimeSpan.FromSeconds(3.5));
+                return;
+            }
+
+            // Speed up scan frequency (1s) when target applications are active
+            _timer.Change(TimeSpan.FromSeconds(1.0), TimeSpan.FromSeconds(1.0));
+
+            List<string> buttons = new();
+            List<string> checkboxes = new();
+            Application.Current?.Dispatcher.Invoke(() =>
             {
                 buttons = ButtonRules.Where(r => r.IsEnabled).Select(r => r.Keyword).ToList();
                 checkboxes = CheckboxRules.Where(r => r.IsEnabled).Select(r => r.Keyword).ToList();
-            }
-            if (buttons.Count == 0) return;
+            });
 
-            var targetApps = AppObserver.Shared.FindTargetApplications();
-            if (targetApps.Count == 0) return;
+            if (buttons.Count == 0) return;
 
             foreach (var app in targetApps)
             {
@@ -156,11 +166,17 @@ namespace NoInteraction.Core
 
                 _ocrScanInFlight = true;
                 var capturedApp = app;
-                string capturedAppName = appName;
+                string capturedAppName = "Target App";
+                try { capturedAppName = string.IsNullOrEmpty(app.MainWindowTitle) ? app.ProcessName : app.MainWindowTitle; } catch { }
 
                 _ = RunOcrPassAsync(bounds.Value, buttons, capturedApp, capturedAppName);
                 break;
             }
+        }
+
+        public void Dispose()
+        {
+            _timer.Dispose();
         }
 
         private async System.Threading.Tasks.Task RunOcrPassAsync(Rect bounds, List<string> buttons, System.Diagnostics.Process app, string appName)
