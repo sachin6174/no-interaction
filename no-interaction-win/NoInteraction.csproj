@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <RootNamespace>NoInteraction</RootNamespace>
+    <AssemblyName>NoInteraction</AssemblyName>
+    <ApplicationManifest>NoInteraction/App/app.manifest</ApplicationManifest>
+    <StartupObject>NoInteraction.App</StartupObject>
+    <Platforms>x64</Platforms>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The SDK only auto-detects App.xaml as ApplicationDefinition when it sits at the
+         project root. Ours is nested under NoInteraction/App/, so classify explicitly. -->
+    <Page Remove="**/*.xaml" />
+    <ApplicationDefinition Include="NoInteraction/App/App.xaml">
+      <SubType>Designer</SubType>
+    </ApplicationDefinition>
+    <Page Include="NoInteraction/UI/DashboardWindow.xaml">
+      <SubType>Designer</SubType>
+    </Page>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- UI Automation client APIs are not part of the default WPF shared framework
+         and must be referenced explicitly. -->
+    <Reference Include="UIAutomationClient" />
+    <Reference Include="UIAutomationTypes" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Drawing.Common" Version="8.0.8" />
+  </ItemGroup>
+
+</Project>

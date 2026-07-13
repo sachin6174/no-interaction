@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=NoInteraction
+Comment=Auto-approve Antigravity/VS Code prompts
+Exec=/bin/bash -c 'cd /path/to/no-interaction-linux && ./run.sh'
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true

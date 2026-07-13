@@ -1,0 +1,115 @@
+# ==============================================================================
+# Global .gitignore — Multi-Platform Workspace (NoInteraction)
+# Prevents OS-specific files, build artifacts, IDE/editor configurations, 
+# and dependency environments from being tracked by git.
+# ==============================================================================
+
+# ── System / OS-Specific Files ────────────────────────────────────────────────
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+.directory
+*~
+
+# ── General Editors & IDEs ────────────────────────────────────────────────────
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln.docstates
+
+# ── macOS & Swift App (no-interaction-mac) ────────────────────────────────────
+no-interaction-mac/.build/
+no-interaction-mac/.build_clean/
+no-interaction-mac/build/
+no-interaction-mac/build_dist/
+no-interaction-mac/DerivedData/
+no-interaction-mac/*.app/
+no-interaction-mac/*.pkg
+no-interaction-mac/*.dmg
+no-interaction-mac/*.zip
+no-interaction-mac/*.tar.gz
+no-interaction-mac/*.ipa
+no-interaction-mac/*.xcarchive
+no-interaction-mac/*.dSYM/
+no-interaction-mac/*.dSYM.zip
+no-interaction-mac/*.xcodeproj/xcuserdata/
+no-interaction-mac/*.xcodeproj/project.xcworkspace/xcuserdata/
+no-interaction-mac/*.xcworkspace/xcuserdata/
+no-interaction-mac/*.xcodeproj/xcshareddata/xcodeprojUsers/
+no-interaction-mac/.swiftpm/xcode/
+no-interaction-mac/.swiftpm/configuration/
+
+# ── Linux & Python App (no-interaction-linux) ──────────────────────────────────
+no-interaction-linux/.venv/
+no-interaction-linux/venv/
+no-interaction-linux/env/
+no-interaction-linux/ENV/
+no-interaction-linux/__pycache__/
+no-interaction-linux/*.pyc
+no-interaction-linux/*.pyo
+no-interaction-linux/*.pyd
+no-interaction-linux/.pytest_cache/
+no-interaction-linux/.mypy_cache/
+no-interaction-linux/.coverage
+no-interaction-linux/htmlcov/
+
+# ── Windows & C# App (no-interaction-win) ──────────────────────────────────────
+no-interaction-win/bin/
+no-interaction-win/obj/
+no-interaction-win/dist/
+no-interaction-win/.vs/
+no-interaction-win/*.user
+no-interaction-win/*.userosv
+no-interaction-win/*.suo
+
+# ── Logs, Caches & Temporary Files ─────────────────────────────────────────────
+*.log
+*.tmp
+*.temp
+*.swp
+*.bak
+*.crash
+.cache/
+.clang-module-cache/
+
+# ── Security & Secrets ────────────────────────────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db
+.env
+.env.*
+!.env.example
+credentials.json
+secrets.json

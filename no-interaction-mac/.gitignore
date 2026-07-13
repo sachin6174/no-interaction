@@ -1,0 +1,83 @@
+# ==============================================================================
+# .gitignore — macOS & Swift App (NoInteraction)
+# Prevents build artifacts, system metadata, secrets & temporary files from being pushed to GitHub.
+# ==============================================================================
+
+# ── Build Artifacts & Output Directories ──────────────────────────────────────
+.build/
+build/
+build_dist/
+DerivedData/
+*.app/
+*.pkg
+*.dmg
+*.zip
+*.tar.gz
+*.ipa
+*.xcarchive
+*.dSYM/
+*.dSYM.zip
+
+# ── Compiled Binaries & Libraries ─────────────────────────────────────────────
+*.o
+*.a
+*.dylib
+*.so
+*.framework/
+
+# ── Xcode & Swift Package Manager User State ──────────────────────────────────
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcshareddata/xcodeprojUsers/
+.swiftpm/xcode/
+.swiftpm/configuration/
+
+# ── macOS System Metadata ──────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# ── Security, Secrets & Certificates ──────────────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db
+.env
+.env.*
+!.env.example
+credentials.json
+secrets.json
+
+# ── Logs, Caches & Temporary Files ─────────────────────────────────────────────
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+*.bak
+*.crash
+.cache/
+.clang-module-cache/
+
+# ── Editor & IDE Configuration ────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosv
