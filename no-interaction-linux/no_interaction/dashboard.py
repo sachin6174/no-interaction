@@ -81,6 +81,7 @@ class Dashboard(tk.Tk):
         self._build_tabs()
         self._build_footer()
 
+        self.engine.set_clipboard_callback(self.clipboard_set_text)
         self.engine.add_listener(lambda: self.after(0, self.refresh))
         self.refresh()
 
@@ -120,6 +121,7 @@ class Dashboard(tk.Tk):
 
         self._build_log_tab()
         self._build_rules_tab()
+        self._build_queue_tab()
 
     def _build_log_tab(self):
         tab = ttk.Frame(self.notebook, padding=12)
@@ -222,6 +224,37 @@ class Dashboard(tk.Tk):
         self._render_rules(self.button_rules_frame, self.engine.button_rules, TargetType.BUTTON)
         self._render_rules(self.checkbox_rules_frame, self.engine.checkbox_rules, TargetType.CHECKBOX)
 
+        # Update queue active & loop mode states
+        self.queue_active_var.set(self.engine.is_prompt_queue_active)
+        self.loop_mode_var.set(self.engine.loop_mode_enabled)
+        self.loop_limit_var.set(str(self.engine.loop_mode_limit))
+
+        queue_count = len(self.engine.prompt_queue)
+        curr_idx = self.engine.current_prompt_index
+        if self.engine.is_prompt_queue_active:
+            if curr_idx < queue_count:
+                self.queue_status_label.config(text=f"Status: Active — Sending {curr_idx + 1} of {queue_count}", foreground=self.green_accent)
+            else:
+                self.queue_status_label.config(text="Status: Complete (Queue fully dispatched)", foreground=self.gray_text)
+        else:
+            self.queue_status_label.config(text="Status: Inactive", foreground=self.gray_text)
+
+        if curr_idx > 0:
+            self.restart_queue_btn.pack(side="right")
+        else:
+            self.restart_queue_btn.pack_forget()
+
+        # Update loop status
+        limit_str = "∞" if self.engine.loop_mode_limit == 0 else str(self.engine.loop_mode_limit)
+        self.loop_status_label.config(text=f"Dispatched: {self.engine.loop_mode_counter} / {limit_str}")
+
+        if self.engine.loop_mode_enabled:
+            self.loop_settings_frame.pack(fill="x", pady=(8, 0))
+        else:
+            self.loop_settings_frame.pack_forget()
+
+        self._render_queue()
+
     def refresh_log(self):
         query = self.search_var.get().strip().lower()
         if query == "filter logs...":
@@ -249,7 +282,7 @@ class Dashboard(tk.Tk):
             ttk.Checkbutton(card, variable=var, command=lambda rid=rule.id: self.engine.toggle_rule(rid, target_type)).pack(side="left")
             
             label_fg = self.fg_color if rule.is_enabled else self.gray_text
-            label = ttk.Label(card, text=rule.keyword, font=("Sans", 10, "medium" if rule.is_enabled else "normal"), foreground=label_fg)
+            label = ttk.Label(card, text=rule.keyword, font=("Sans", 10, "bold" if rule.is_enabled else "normal"), foreground=label_fg)
             label.pack(side="left", padx=(8, 0), fill="x", expand=True)
             
             del_btn = ttk.Button(card, text="✕", width=3, style="Action.TButton", command=lambda rid=rule.id: self.engine.remove_rule(rid, target_type))
@@ -293,3 +326,211 @@ class Dashboard(tk.Tk):
         if self._on_quit:
             self._on_quit()
         self.destroy()
+
+    def clipboard_set_text(self, text: str) -> None:
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self.update()
+            print("[Dashboard] Copied prompt to clipboard")
+        except Exception as e:
+            print(f"[Dashboard] Failed to copy to clipboard: {e}")
+
+    def _build_queue_tab(self):
+        tab = ttk.Frame(self.notebook, padding=12)
+        self.notebook.add(tab, text="Prompt Queue")
+
+        # Scrollable container
+        canvas = tk.Canvas(tab, bg=self.bg_color, bd=0, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(tab, orient="vertical", command=canvas.yview)
+        scroll_content = ttk.Frame(canvas)
+
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        canvas_window = canvas.create_window((0, 0), window=scroll_content, anchor="nw")
+
+        def _on_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas.itemconfig(canvas_window, width=event.width)
+
+        canvas.bind("<Configure>", _on_configure)
+
+        # 1. Active Queue Toggle Card
+        card1 = ttk.Frame(scroll_content, style="Card.TFrame", padding=12)
+        card1.pack(fill="x", pady=6)
+
+        c1_top = ttk.Frame(card1, style="Card.TFrame")
+        c1_top.pack(fill="x")
+
+        c1_title_frame = ttk.Frame(c1_top, style="Card.TFrame")
+        c1_title_frame.pack(side="left")
+        ttk.Label(c1_title_frame, text="Prompt Queue Dispatch", font=("Sans", 11, "bold"), foreground=self.accent_color, background=self.card_bg).pack(anchor="w")
+        ttk.Label(c1_title_frame, text="Sequentially paste prompts automatically when the agent window is free.", font=("Sans", 9), foreground=self.gray_text, background=self.card_bg).pack(anchor="w")
+
+        self.queue_active_var = tk.BooleanVar()
+        self.queue_active_check = ttk.Checkbutton(c1_top, variable=self.queue_active_var, command=self._toggle_queue_active)
+        self.queue_active_check.pack(side="right", padx=10)
+
+        self.queue_status_frame = ttk.Frame(card1, style="Card.TFrame")
+        self.queue_status_frame.pack(fill="x", pady=(8, 0))
+
+        self.queue_status_label = ttk.Label(self.queue_status_frame, text="", font=("Sans", 10), background=self.card_bg)
+        self.queue_status_label.pack(side="left")
+
+        self.restart_queue_btn = ttk.Button(self.queue_status_frame, text="Restart Queue", command=self._restart_queue)
+        self.restart_queue_btn.pack(side="right")
+
+        # 2. Loop Test Mode Settings Card
+        card2 = ttk.Frame(scroll_content, style="Card.TFrame", padding=12)
+        card2.pack(fill="x", pady=6)
+
+        c2_top = ttk.Frame(card2, style="Card.TFrame")
+        c2_top.pack(fill="x")
+
+        c2_title_frame = ttk.Frame(c2_top, style="Card.TFrame")
+        c2_title_frame.pack(side="left")
+        ttk.Label(c2_title_frame, text="Loop Test Mode", font=("Sans", 11, "bold"), foreground=self.accent_color, background=self.card_bg).pack(anchor="w")
+        ttk.Label(c2_title_frame, text="Repetitive stress-testing via sequential system auditing.", font=("Sans", 9), foreground=self.gray_text, background=self.card_bg).pack(anchor="w")
+
+        self.loop_mode_var = tk.BooleanVar()
+        self.loop_mode_check = ttk.Checkbutton(c2_top, variable=self.loop_mode_var, command=self._toggle_loop_mode)
+        self.loop_mode_check.pack(side="right", padx=10)
+
+        self.loop_settings_frame = ttk.Frame(card2, style="Card.TFrame")
+        self.loop_settings_frame.pack(fill="x", pady=(8, 0))
+
+        ttk.Label(self.loop_settings_frame, text="Limit:", font=("Sans", 10), background=self.card_bg).pack(side="left")
+
+        self.loop_limit_var = tk.StringVar()
+        self.loop_limit_10 = ttk.Radiobutton(self.loop_settings_frame, text="10 Iterations", variable=self.loop_limit_var, value="10", command=self._set_loop_limit)
+        self.loop_limit_10.pack(side="left", padx=10)
+        self.loop_limit_inf = ttk.Radiobutton(self.loop_settings_frame, text="Infinite", variable=self.loop_limit_var, value="0", command=self._set_loop_limit)
+        self.loop_limit_inf.pack(side="left")
+
+        self.loop_reset_btn = ttk.Button(self.loop_settings_frame, text="Reset", command=self._reset_loop_counter)
+        self.loop_reset_btn.pack(side="right")
+
+        self.loop_status_label = ttk.Label(self.loop_settings_frame, text="", font=("Sans", 10), background=self.card_bg)
+        self.loop_status_label.pack(side="right", padx=15)
+
+        # 3. Default System Audit Banner
+        card3 = ttk.Frame(scroll_content, style="Card.TFrame", padding=12)
+        card3.pack(fill="x", pady=6)
+
+        c3_top = ttk.Frame(card3, style="Card.TFrame")
+        c3_top.pack(fill="x")
+
+        ttk.Label(c3_top, text="System Audit Template", font=("Sans", 10, "bold"), foreground=self.accent_color, background=self.card_bg).pack(side="left")
+        ttk.Button(c3_top, text="Restore Default", command=self._restore_default_queue).pack(side="right")
+
+        prompt_preview = self.engine.default_prompt[:180] + "..."
+        ttk.Label(card3, text=prompt_preview, font=("Courier", 8), foreground=self.gray_text, background=self.bg_color, padding=8, relief="solid", borderwidth=1).pack(fill="x", pady=(8, 0))
+
+        # 4. Add New Custom Prompt
+        card4 = ttk.Frame(scroll_content, style="Card.TFrame", padding=12)
+        card4.pack(fill="x", pady=6)
+
+        ttk.Label(card4, text="Add New Custom Prompt", font=("Sans", 11, "bold"), foreground=self.accent_color, background=self.card_bg).pack(anchor="w")
+
+        self.new_prompt_text = tk.Text(card4, height=3, bg=self.bg_color, fg=self.fg_color, insertbackground=self.fg_color, relief="solid", borderwidth=1, font=("Courier", 9))
+        self.new_prompt_text.pack(fill="x", pady=6)
+
+        c4_bot = ttk.Frame(card4, style="Card.TFrame")
+        c4_bot.pack(fill="x")
+        self.queue_prompt_btn = ttk.Button(c4_bot, text="Queue Prompt", command=self._queue_custom_prompt)
+        self.queue_prompt_btn.pack(side="right")
+
+        # 5. Configured Queue List
+        card5 = ttk.Frame(scroll_content, style="Card.TFrame", padding=12)
+        card5.pack(fill="x", pady=6)
+
+        c5_top = ttk.Frame(card5, style="Card.TFrame")
+        c5_top.pack(fill="x")
+        ttk.Label(c5_top, text="Configured Queue", font=("Sans", 11, "bold"), foreground=self.accent_color, background=self.card_bg).pack(side="left")
+        self.clear_queue_btn = ttk.Button(c5_top, text="Clear All", command=self._clear_queue)
+        self.clear_queue_btn.pack(side="right")
+
+        self.queue_list_frame = ttk.Frame(card5, style="Card.TFrame")
+        self.queue_list_frame.pack(fill="x", pady=(8, 0))
+
+    def _toggle_queue_active(self):
+        self.engine.is_prompt_queue_active = self.queue_active_var.get()
+
+    def _toggle_loop_mode(self):
+        self.engine.loop_mode_enabled = self.loop_mode_var.get()
+
+    def _set_loop_limit(self):
+        self.engine.loop_mode_limit = int(self.loop_limit_var.get())
+
+    def _reset_loop_counter(self):
+        self.engine.loop_mode_counter = 0
+
+    def _restart_queue(self):
+        self.engine.current_prompt_index = 0
+
+    def _restore_default_queue(self):
+        self.engine.reset_prompt_queue_to_default()
+
+    def _queue_custom_prompt(self):
+        txt = self.new_prompt_text.get("1.0", tk.END).strip()
+        if txt:
+            self.engine.prompt_queue = self.engine.prompt_queue + [txt]
+            self.new_prompt_text.delete("1.0", tk.END)
+
+    def _clear_queue(self):
+        self.engine.prompt_queue = []
+        self.engine.current_prompt_index = 0
+        self.engine.is_prompt_queue_active = False
+
+    def _delete_queue_item(self, idx):
+        q = list(self.engine.prompt_queue)
+        if 0 <= idx < len(q):
+            q.pop(idx)
+            self.engine.prompt_queue = q
+            if self.engine.current_prompt_index > idx:
+                self.engine.current_prompt_index = max(0, self.engine.current_prompt_index - 1)
+
+    def _render_queue(self):
+        for child in self.queue_list_frame.winfo_children():
+            child.destroy()
+
+        queue = self.engine.prompt_queue
+        curr_idx = self.engine.current_prompt_index
+        is_active = self.engine.is_prompt_queue_active
+
+        if not queue:
+            ttk.Label(self.queue_list_frame, text="Queue is empty. Enter a prompt above to schedule.", font=("Sans", 10), foreground=self.gray_text, background=self.card_bg).pack(pady=12)
+            return
+
+        for idx, prompt in enumerate(queue):
+            row = ttk.Frame(self.queue_list_frame, padding=4, style="Card.TFrame")
+            row.pack(fill="x", pady=2)
+
+            if idx < curr_idx:
+                dot_color = self.border_color
+            elif idx == curr_idx and is_active:
+                dot_color = self.green_accent
+            else:
+                dot_color = self.accent_color
+
+            canvas_dot = tk.Canvas(row, width=12, height=12, bg=self.card_bg, bd=0, highlightthickness=0)
+            canvas_dot.pack(side="left", padx=(4, 8))
+            canvas_dot.create_oval(2, 2, 10, 10, fill=dot_color, outline="")
+
+            text_frame = ttk.Frame(row, style="Card.TFrame")
+            text_frame.pack(side="left", fill="x", expand=True)
+
+            lbl_title = ttk.Label(text_frame, text=f"Prompt {idx + 1}", font=("Sans", 10, "bold"), foreground=self.fg_color if idx >= curr_idx else self.gray_text, background=self.card_bg)
+            lbl_title.pack(anchor="w")
+
+            preview = prompt.split("\n")[0][:80]
+            if len(prompt) > 80 or len(prompt.split("\n")) > 1:
+                preview += "..."
+
+            lbl_preview = ttk.Label(text_frame, text=preview, font=("Courier", 8), foreground=self.gray_text, background=self.card_bg)
+            lbl_preview.pack(anchor="w")
+
+            del_btn = ttk.Button(row, text="✕", width=3, style="Action.TButton", command=lambda i=idx: self._delete_queue_item(i))
+            del_btn.pack(side="right", padx=4)

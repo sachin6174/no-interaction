@@ -20,7 +20,9 @@ TARGET_APP_NAMES = [
 ]
 EDITOR_NAMES = ["visual studio code", "vs code", "vscode", "cursor", "windsurf", "antigravity", "code"]
 BROWSER_NAMES = ["chrome", "chromium", "firefox", "brave", "opera", "vivaldi", "edge"]
+TERMINAL_NAMES = ["terminal", "konsole", "alacritty", "kitty", "xterm", "bash", "zsh", "sh"]
 ANTIGRAVITY_WINDOW_KEYWORDS = ["antigravity", "anti-gravity", "agy", "gemini", "no-interaction"]
+
 
 
 class AppObserver:
@@ -36,7 +38,7 @@ class AppObserver:
         return pyatspi.Registry.getDesktop(0)
 
     def find_target_applications(self, custom_targets: Optional[list[str]] = None):
-        targets = [t for t in (TARGET_APP_NAMES + (custom_targets or [])) if t]
+        targets = [t for t in (TARGET_APP_NAMES + TERMINAL_NAMES + (custom_targets or [])) if t]
         results = []
         desktop = self._desktop()
         for i in range(desktop.childCount):
@@ -57,8 +59,13 @@ class AppObserver:
         name = (getattr(app, "name", "") or "").lower()
         return any(e in name for e in EDITOR_NAMES)
 
+    def is_terminal(self, app) -> bool:
+        name = (getattr(app, "name", "") or "").lower()
+        return any(t in name for t in TERMINAL_NAMES)
+
     def is_browser_or_editor(self, app) -> bool:
         return self.is_browser(app) or self.is_editor(app)
+
 
     def is_antigravity_window(self, window) -> bool:
         try:

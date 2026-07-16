@@ -18,6 +18,15 @@ DEFAULT_BUTTONS = [
 ]
 DEFAULT_CHECKBOXES = ["Remember", "Always", "Trust", "Don't ask", "Don't show"]
 
+DEFAULT_PROMPT = """Perform a complete, exhaustive, and uncompromising security, architecture, performance, and UI/UX audit of this entire codebase. Analyze every single line of code with extreme depth and rigor.
+
+Your objective is to optimize this application to the absolute highest tier of software quality in existence. Follow these strict directives:
+1. BUG DETECTION & RESOLUTION: Scan for any logical bugs, concurrency race conditions, memory leaks, performance bottlenecks, edge-case crashes, and API misuses. Resolve them immediately with clean, production-ready, and robust code.
+2. CODE OPTIMIZATION & REFACTORING: Optimize compile times, memory footprints, and CPU utilization. Eliminate redundant loops, redundant accessibility calls, and heavy UI renderings. Ensure optimal Swift concurrency paradigms.
+3. UI/UX REFINEMENT: Review all layouts, fonts, spacing, color contrasts, transitions, and hover animations. Upgrade the visual design system to feel premium, modern, and state-of-the-art.
+4. EDGE CASES & ROBUSTNESS: Ensure perfect error handling, validation, and defensive coding against unexpected window hierarchies, missing permissions, or browser states.
+5. DEEP SEARCH: Use the internet, latest documentation, Apple SDK guidelines, and the full extent of your cognitive capacity. Do not stop until this codebase is completely flawless."""
+
 
 class SettingsStore:
     def __init__(self):
@@ -30,6 +39,12 @@ class SettingsStore:
         self.checkbox_rules: list[ApprovalRule] = [
             ApprovalRule(k, TargetType.CHECKBOX) for k in DEFAULT_CHECKBOXES
         ]
+        self.prompt_queue: list[str] = [DEFAULT_PROMPT]
+        self.current_prompt_index: int = 0
+        self.is_prompt_queue_active: bool = True
+        self.loop_mode_enabled: bool = False
+        self.loop_mode_limit: int = 10
+        self.loop_mode_counter: int = 0
 
     @staticmethod
     def load() -> "SettingsStore":
@@ -44,6 +59,13 @@ class SettingsStore:
                     store.button_rules = [ApprovalRule.from_dict(r) for r in data["buttonRules"]]
                 if data.get("checkboxRules"):
                     store.checkbox_rules = [ApprovalRule.from_dict(r) for r in data["checkboxRules"]]
+                if "promptQueue" in data:
+                    store.prompt_queue = data["promptQueue"]
+                store.current_prompt_index = data.get("currentPromptIndex", 0)
+                store.is_prompt_queue_active = data.get("isPromptQueueActive", True)
+                store.loop_mode_enabled = data.get("loopModeEnabled", False)
+                store.loop_mode_limit = data.get("loopModeLimit", 10)
+                store.loop_mode_counter = data.get("loopModeCounter", 0)
         except Exception:
             # Corrupt or unreadable settings file — fall back to defaults.
             pass
@@ -64,6 +86,12 @@ class SettingsStore:
                 "totalApprovalsCount": self.total_approvals_count,
                 "buttonRules": [r.to_dict() for r in self.button_rules],
                 "checkboxRules": [r.to_dict() for r in self.checkbox_rules],
+                "promptQueue": self.prompt_queue,
+                "currentPromptIndex": self.current_prompt_index,
+                "isPromptQueueActive": self.is_prompt_queue_active,
+                "loopModeEnabled": self.loop_mode_enabled,
+                "loopModeLimit": self.loop_mode_limit,
+                "loopModeCounter": self.loop_mode_counter,
             }
             SETTINGS_PATH.write_text(json.dumps(data, indent=2))
         except Exception:

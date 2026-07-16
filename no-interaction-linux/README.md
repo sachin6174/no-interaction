@@ -5,9 +5,7 @@ browser windows and auto-clicks matching approval buttons (`Allow`, `Approve`,
 `Continue`, ...) and auto-ticks matching checkboxes (`Remember`, `Trust`, ...)
 using AT-SPI, with a Tesseract OCR fallback for content AT-SPI can't see.
 
-This port intentionally does **not** include the Mac build's Prompt Queue /
-Loop Mode feature (auto-pasting new prompts into the agent's chat box). It
-only automates the approval dialogs themselves.
+This port includes the macOS build's Prompt Queue / Loop Mode feature (auto-pasting new prompts into the agent's chat box) in addition to automating the approval dialogs themselves.
 
 ## Requirements
 

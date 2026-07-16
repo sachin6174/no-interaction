@@ -73,3 +73,73 @@ class ClickAutomation:
         finally:
             if completion:
                 completion()
+
+    def press_paste_keystroke(self) -> None:
+        if self._disp is None:
+            return
+        try:
+            disp = self._disp
+            # XK_Control_L keysym is 0xffe3
+            # XK_v keysym is 0x0076
+            ctrl_keycode = disp.keysym_to_keycode(0xffe3)
+            v_keycode = disp.keysym_to_keycode(0x0076)
+            
+            xtest.fake_input(disp, X.KeyPress, ctrl_keycode)
+            disp.sync()
+            time.sleep(0.02)
+            xtest.fake_input(disp, X.KeyPress, v_keycode)
+            disp.sync()
+            time.sleep(0.05)
+            xtest.fake_input(disp, X.KeyRelease, v_keycode)
+            disp.sync()
+            time.sleep(0.02)
+            xtest.fake_input(disp, X.KeyRelease, ctrl_keycode)
+            disp.sync()
+            print("[ClickAutomation] Simulated Ctrl+V press")
+        except Exception as e:
+            print(f"[ClickAutomation] Paste failed: {e}")
+
+    def press_return_key(self) -> None:
+        if self._disp is None:
+            return
+        try:
+            disp = self._disp
+            # XK_Return keysym is 0xff0d
+            return_keycode = disp.keysym_to_keycode(0xff0d)
+            
+            xtest.fake_input(disp, X.KeyPress, return_keycode)
+            disp.sync()
+            time.sleep(0.05)
+            xtest.fake_input(disp, X.KeyRelease, return_keycode)
+            disp.sync()
+            print("[ClickAutomation] Simulated Return press")
+        except Exception as e:
+            print(f"[ClickAutomation] Return press failed: {e}")
+
+    def send_string(self, text: str) -> None:
+        if self._disp is None:
+            return
+        try:
+            disp = self._disp
+            for char in text:
+                if char == '\n':
+                    keysym = 0xff0d  # XK_Return
+                elif char == '\t':
+                    keysym = 0xff09  # XK_Tab
+                else:
+                    keysym = ord(char)
+                
+                keycode = disp.keysym_to_keycode(keysym)
+                if keycode == 0:
+                    continue
+                    
+                xtest.fake_input(disp, X.KeyPress, keycode)
+                disp.sync()
+                time.sleep(0.01)
+                xtest.fake_input(disp, X.KeyRelease, keycode)
+                disp.sync()
+                time.sleep(0.01)
+            print(f"[ClickAutomation] Typed string: '{text.replace('\n', '\\n')}'")
+        except Exception as e:
+            print(f"[ClickAutomation] Send string failed: {e}")
+

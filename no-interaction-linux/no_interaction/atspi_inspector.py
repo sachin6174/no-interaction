@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 import pyatspi
+import re
+
 
 from .app_observer import AppObserver
 from .models import KeywordMatcher
@@ -32,8 +34,17 @@ class InspectionResult:
     position: Optional[tuple[int, int]]
 
 
+@dataclass
+class ChatStateResult:
+    input_area: Optional[any] = None
+    is_busy: bool = False
+
+
 class AtspiInspector:
     _instance: Optional["AtspiInspector"] = None
+
+    def __init__(self):
+        self._last_terminal_prompts: dict[int, str] = {}
 
     @classmethod
     def shared(cls) -> "AtspiInspector":
@@ -211,3 +222,173 @@ class AtspiInspector:
         if w <= 0 or h <= 0:
             return None
         return (x + w // 2, y + h // 2)
+
+    def find_chat_input_and_status(self, element, depth: int = 0) -> ChatStateResult:
+        result = ChatStateResult()
+
+        def traverse(el, current_depth):
+            if current_depth > 30:
+                return
+
+            role = self._safe_role(el)
+            if role is None:
+                return
+
+            # Check for Stop button
+            is_button = False
+            try:
+                is_button = role in (
+                    getattr(pyatspi, "ROLE_PUSH_BUTTON", None),
+                    getattr(pyatspi, "ROLE_TOGGLE_BUTTON", None),
+                    getattr(pyatspi, "ROLE_BUTTON", None)
+                )
+            except Exception:
+                pass
+
+            if is_button:
+                label = self._label(el).lower().strip()
+                try:
+                    desc = (el.description or "").lower().strip()
+                except Exception:
+                    desc = ""
+
+                is_stop = any(
+                    x in label or x in desc
+                    for x in ("stop", "cancel", "stop generating", "interrupt", "■", "⏹", "square.fill", "stop.fill")
+                )
+                if is_stop:
+                    result.is_busy = True
+
+            # Check for Text Entry (chat input)
+            is_text_entry = False
+            try:
+                is_text_entry = role in (
+                    getattr(pyatspi, "ROLE_ENTRY", None),
+                    getattr(pyatspi, "ROLE_TEXT", None)
+                )
+            except Exception:
+                pass
+
+            if is_text_entry:
+                label = (getattr(el, "name", "") or "").lower().strip()
+                try:
+                    desc = (el.description or "").lower().strip()
+                except Exception:
+                    desc = ""
+
+                placeholder = ""
+                try:
+                    attrs = el.getAttributes()
+                    for attr in attrs:
+                        if attr.startswith("placeholder-text="):
+                            placeholder = attr.split("=", 1)[1].lower()
+                except Exception:
+                    pass
+
+                is_chat_input = any(
+                    x in label or x in desc or x in placeholder
+                    for x in ("message", "ask", "prompt", "type a", "ask a", "chat")
+                )
+                if is_chat_input:
+                    result.input_area = el
+
+            for child in self._children(el):
+                traverse(child, current_depth + 1)
+
+        traverse(element, depth)
+        return result
+
+    # MARK: Pass 3 — Terminal monitoring
+
+    def inspect_terminal_for_prompts(self, app, button_keywords: list[str]) -> Optional[str]:
+        observer = AppObserver.shared()
+        windows = observer.top_level_windows(app)
+        if not windows:
+            return None
+
+        # Matches standard prompts like:
+        # "Are you sure you want to continue connecting (yes/no/[fingerprint])?"
+        # "Do you want to continue? [y/N]"
+        # "Proceed? (y/n)"
+        prompt_pattern = re.compile(
+            r"(?i)(are you sure you want to continue connecting|do you want to continue|proceed with installation|accept the license|apply changes|proceed|continue)\??\s*[\(\[]\s*(yes/no/\[fingerprint\]|yes/no|y/n|y/n/\[fingerprint\]|y/n/c|y/n/a)\s*[\)\]]\s*$",
+            re.IGNORECASE
+        )
+
+        for win in windows:
+            terminals = self._find_terminals(win, 0)
+            for term in terminals:
+                try:
+                    text_iface = term.queryText()
+                except Exception:
+                    continue
+
+                if text_iface is None:
+                    continue
+
+                try:
+                    count = text_iface.characterCount
+                    if count <= 0:
+                        continue
+                    # Fetch only the last 200 characters to keep it highly performant
+                    start_idx = max(0, count - 200)
+                    buffer_text = text_iface.getText(start_idx, count).strip()
+                except Exception:
+                    continue
+
+                if not buffer_text:
+                    continue
+
+                # Get the last non-empty line
+                lines = [l.strip() for l in buffer_text.split('\n') if l.strip()]
+                if not lines:
+                    continue
+                last_line = lines[-1]
+
+                # Match the last line against our regex patterns
+                match = prompt_pattern.search(last_line)
+                if match:
+                    question = match.group(1).lower()
+                    choices = match.group(2).lower()
+
+                    # Default to y, or yes if explicitly asked for yes/no
+                    response = "y\n"
+                    if "yes/no" in choices:
+                        response = "yes\n"
+
+                    # Check standard safe contexts or user-configured keywords
+                    is_standard_safe = any(
+                        kw in question for kw in
+                        ["proceed", "continue", "install", "accept", "trust", "connect", "allow", "confirm", "yes/no"]
+                    )
+                    is_user_matched = any(kw.lower() in question for kw in button_keywords)
+
+                    if is_standard_safe or is_user_matched:
+                        term_id = id(term)
+                        # Debounce: avoid replying to the exact same prompt line
+                        if self._last_terminal_prompts.get(term_id) == last_line:
+                            continue
+
+                        self._last_terminal_prompts[term_id] = last_line
+                        print(f"[AtspiInspector] Detected terminal prompt: '{last_line}' -> Auto-responding '{response.strip()}'")
+                        return response
+        return None
+
+    def _find_terminals(self, element, depth: int = 0) -> list:
+        if depth > MAX_DEPTH:
+            return []
+        role = self._safe_role(element)
+        if role is None:
+            return []
+
+        terminals = []
+        try:
+            if role == pyatspi.ROLE_TERMINAL:
+                terminals.append(element)
+        except Exception:
+            pass
+
+        for child in self._children(element):
+            terminals.extend(self._find_terminals(child, depth + 1))
+        return terminals
+

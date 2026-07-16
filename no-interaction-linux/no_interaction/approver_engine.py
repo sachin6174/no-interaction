@@ -14,7 +14,7 @@ from .atspi_inspector import AtspiInspector
 from .click_automation import ClickAutomation
 from .models import ApprovalRule, LogEntry, TargetType
 from .ocr_scanner import OcrScanner
-from .settings_store import DEFAULT_BUTTONS, DEFAULT_CHECKBOXES, SettingsStore
+from .settings_store import DEFAULT_BUTTONS, DEFAULT_CHECKBOXES, SettingsStore, DEFAULT_PROMPT
 
 SCAN_INTERVAL_SECONDS = 3.0
 COOLDOWN_SECONDS = 1.2
@@ -28,6 +28,7 @@ SOUND_CANDIDATES = [
 
 class ApproverEngine:
     _instance: Optional["ApproverEngine"] = None
+    default_prompt = DEFAULT_PROMPT
 
     @classmethod
     def shared(cls) -> "ApproverEngine":
@@ -45,6 +46,14 @@ class ApproverEngine:
         self.button_rules: list[ApprovalRule] = list(self._settings.button_rules)
         self.checkbox_rules: list[ApprovalRule] = list(self._settings.checkbox_rules)
         self.logs: list[LogEntry] = []
+
+        self._prompt_queue = self._settings.prompt_queue
+        self._current_prompt_index = self._settings.current_prompt_index
+        self._is_prompt_queue_active = self._settings.is_prompt_queue_active
+        self._loop_mode_enabled = self._settings.loop_mode_enabled
+        self._loop_mode_limit = self._settings.loop_mode_limit
+        self._loop_mode_counter = self._settings.loop_mode_counter
+        self._clipboard_callback: Optional[Callable[[str], None]] = None
 
         self._rules_lock = threading.Lock()
         self._logs_lock = threading.Lock()
@@ -94,6 +103,81 @@ class ApproverEngine:
         self._notify()
 
     @property
+    def prompt_queue(self) -> list[str]:
+        return self._prompt_queue
+
+    @prompt_queue.setter
+    def prompt_queue(self, value: list[str]) -> None:
+        self._prompt_queue = value
+        self._settings.prompt_queue = value
+        self._settings.save()
+        self._notify()
+
+    @property
+    def current_prompt_index(self) -> int:
+        return self._current_prompt_index
+
+    @current_prompt_index.setter
+    def current_prompt_index(self, value: int) -> None:
+        self._current_prompt_index = value
+        self._settings.current_prompt_index = value
+        self._settings.save()
+        self._notify()
+
+    @property
+    def is_prompt_queue_active(self) -> bool:
+        return self._is_prompt_queue_active
+
+    @is_prompt_queue_active.setter
+    def is_prompt_queue_active(self, value: bool) -> None:
+        self._is_prompt_queue_active = value
+        self._settings.is_prompt_queue_active = value
+        self._settings.save()
+        self._notify()
+
+    @property
+    def loop_mode_enabled(self) -> bool:
+        return self._loop_mode_enabled
+
+    @loop_mode_enabled.setter
+    def loop_mode_enabled(self, value: bool) -> None:
+        self._loop_mode_enabled = value
+        self._settings.loop_mode_enabled = value
+        self._settings.save()
+        self._notify()
+
+    @property
+    def loop_mode_limit(self) -> int:
+        return self._loop_mode_limit
+
+    @loop_mode_limit.setter
+    def loop_mode_limit(self, value: int) -> None:
+        self._loop_mode_limit = value
+        self._settings.loop_mode_limit = value
+        self._settings.save()
+        self._notify()
+
+    @property
+    def loop_mode_counter(self) -> int:
+        return self._loop_mode_counter
+
+    @loop_mode_counter.setter
+    def loop_mode_counter(self, value: int) -> None:
+        self._loop_mode_counter = value
+        self._settings.loop_mode_counter = value
+        self._settings.save()
+        self._notify()
+
+    def set_clipboard_callback(self, callback: Callable[[str], None]) -> None:
+        self._clipboard_callback = callback
+
+    def reset_prompt_queue_to_default(self) -> None:
+        from .settings_store import DEFAULT_PROMPT
+        self.prompt_queue = [DEFAULT_PROMPT]
+        self.current_prompt_index = 0
+        self.is_prompt_queue_active = True
+
+    @property
     def total_approvals_count(self) -> int:
         return self._total_approvals_count
 
@@ -139,6 +223,19 @@ class ApproverEngine:
 
         for app in target_apps:
             app_name = getattr(app, "name", "") or "Target App"
+
+            # Check if target app is a terminal process and inspect it for confirmation prompts
+            if observer.is_terminal(app):
+                try:
+                    term_response = inspector.inspect_terminal_for_prompts(app, buttons)
+                    if term_response:
+                        self._last_action_time = time.monotonic()
+                        ClickAutomation.shared().send_string(term_response)
+                        self._record(app_name, "Terminal Confirmation Prompt", "AT-SPI Terminal")
+                        return  # stop after the first successful action this tick
+                except Exception as e:
+                    print(f"[ApproverEngine] Terminal inspection failed for {app_name}: {e}")
+
             try:
                 result = inspector.inspect_and_auto_approve(app, buttons, checkboxes)
             except Exception as e:
@@ -156,6 +253,32 @@ class ApproverEngine:
                     self._record(app_name, result.element_text, result.action)
                 return  # stop after the first successful action this tick
 
+            # Prompt Queue Check or Loop Mode Check
+            should_check_prompt_state = (self._is_prompt_queue_active and self.current_prompt_index < len(self.prompt_queue)) or \
+                                         (self.loop_mode_enabled and (self.loop_mode_limit == 0 or self.loop_mode_counter < self.loop_mode_limit))
+
+            if should_check_prompt_state:
+                try:
+                    windows = observer.top_level_windows(app)
+                    if observer.is_browser(app):
+                        windows = [w for w in windows if observer.is_antigravity_window(w)]
+
+                    is_busy = False
+                    input_area = None
+                    for win in windows:
+                        chat_state = inspector.find_chat_input_and_status(win, 0)
+                        if chat_state.is_busy:
+                            is_busy = True
+                        if chat_state.input_area is not None:
+                            input_area = chat_state.input_area
+
+                    if not is_busy and input_area is not None:
+                        prompt = DEFAULT_PROMPT if self.loop_mode_enabled else self.prompt_queue[self.current_prompt_index]
+                        self._paste_prompt(prompt, input_area, app)
+                        return  # stop after pasting
+                except Exception as e:
+                    print(f"[ApproverEngine] Prompt queue check failed for {app_name}: {e}")
+
         # Pass 2: OCR fallback if AT-SPI found nothing
         if self._ocr_scan_in_flight:
             return
@@ -167,6 +290,51 @@ class ApproverEngine:
             self._ocr_scan_in_flight = True
             threading.Thread(target=self._run_ocr_pass, args=(bounds, buttons, app_name), daemon=True).start()
             break
+
+    def _paste_prompt(self, prompt: str, input_area, app) -> None:
+        if self.loop_mode_enabled:
+            self.loop_mode_counter += 1
+            print(f"🤖 Loop Mode: Pasting prompt {self.loop_mode_counter}/{'∞' if self.loop_mode_limit == 0 else self.loop_mode_limit}")
+        else:
+            self.current_prompt_index += 1
+            print(f"🤖 Prompt Queue: Pasting prompt {self.current_prompt_index}/{len(self.prompt_queue)}")
+
+        self._last_action_time = time.monotonic()
+        self._notify()
+
+        center = AtspiInspector.shared().center_of(input_area)
+        if center is not None:
+            print(f"🎯 Clicking center of chat input area at: {center} for app: {getattr(app, 'name', '')}")
+            ClickAutomation.shared().perform_click(center, lambda: self._paste_step_2(prompt))
+
+    def _paste_step_2(self, prompt: str) -> None:
+        threading.Thread(target=self._paste_worker, args=(prompt,), daemon=True).start()
+
+    def _paste_worker(self, prompt: str) -> None:
+        time.sleep(0.25)
+        if self._clipboard_callback:
+            try:
+                self._clipboard_callback(prompt)
+            except Exception as e:
+                print(f"Clipboard callback failed: {e}")
+        else:
+            import tkinter as tk
+            try:
+                r = tk.Tk()
+                r.withdraw()
+                r.clipboard_clear()
+                r.clipboard_append(prompt)
+                r.update()
+                r.destroy()
+            except Exception as e:
+                print(f"Fallback clipboard set failed: {e}")
+
+        time.sleep(0.15)
+        print("📋 Pasting prompt...")
+        ClickAutomation.shared().press_paste_keystroke()
+        time.sleep(0.2)
+        print("⌨️ Pressing Return key...")
+        ClickAutomation.shared().press_return_key()
 
     def _run_ocr_pass(self, bounds: tuple[int, int, int, int], buttons: list[str], app_name: str) -> None:
         try:
