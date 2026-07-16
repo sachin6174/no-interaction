@@ -113,3 +113,4 @@ no-interaction-win/*.suo
 !.env.example
 credentials.json
 secrets.json
+sachin-person.config

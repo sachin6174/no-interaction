@@ -49,7 +49,7 @@ echo "🔏 Searching for Developer ID Application Certificate..."
 FOUND_CERT=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -n 1 | sed 's/.*"\(.*\)".*/\1/' || true)
 
 if [ -n "$FOUND_CERT" ]; then
-    echo "  ✓ Found Certificate: $FOUND_CERT"
+    echo "  ✓ Found App Certificate: $FOUND_CERT"
     codesign --force --deep --options runtime \
              --timestamp \
              --entitlements "$ENTITLEMENTS_PATH" \
@@ -61,43 +61,85 @@ else
     codesign --force --deep --sign - "$APP_BUNDLE" || true
 fi
 
+# ── Create Official macOS .pkg & .dmg Installer Packages ─────────────────────
+echo "📦 Generating macOS .pkg & .dmg Installer Packages..."
+
+echo "🔏 Searching for Developer ID Installer Certificate..."
+FOUND_INSTALLER_CERT=$(security find-identity -v | grep "Developer ID Installer" | head -n 1 | sed 's/.*"\(.*\)".*/\1/' || true)
+
+if [ -n "$FOUND_INSTALLER_CERT" ]; then
+    echo "  ✓ Found Installer Certificate: $FOUND_INSTALLER_CERT"
+    pkgbuild --component "$APP_BUNDLE" \
+             --install-location "/Applications" \
+             --identifier "com.antigravity.nointeraction" \
+             --version "1.2.0" \
+             --sign "$FOUND_INSTALLER_CERT" \
+             "$PKG_PATH" 2>&1
+    echo "✅ Signed .pkg Installer."
+else
+    echo "⚠️  No Developer ID Installer Certificate found, fallback to unsigned .pkg..."
+    pkgbuild --component "$APP_BUNDLE" \
+             --install-location "/Applications" \
+             --identifier "com.antigravity.nointeraction" \
+             --version "1.2.0" \
+             "$PKG_PATH" 2>&1
+fi
+
+hdiutil create -volname "NoInteraction Installer" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$DMG_PATH"
+
+if [ -n "$FOUND_CERT" ]; then
+    echo "🔏 Signing DMG..."
+    codesign --force --sign "$FOUND_CERT" "$DMG_PATH"
+    echo "✅ Signed .dmg Installer."
+fi
+
 # ── Notarize with Apple Notary Service ─────────────────────────────────────────
-NOTARIZE_SUCCESS=false
 if [ "$SKIP_NOTARIZATION" = "true" ]; then
     echo "☁️  Skipping Notarization for fast local development build..."
 else
-    echo "☁️  Submitting NoInteraction to Apple Notary Service..."
-    rm -f "$ZIP_PATH"
-    ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
-
-    if xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$KEYCHAIN_PROFILE" --wait; then
-        echo "✅ Notarization Successful!"
-        NOTARIZE_SUCCESS=true
+    echo "☁️  Submitting Installer Packages to Apple Notary Service..."
+    
+    # Notarize PKG
+    if [ -f "$PKG_PATH" ]; then
+        echo "☁️  Submitting PKG installer: $PKG_PATH"
+        if xcrun notarytool submit "$PKG_PATH" --keychain-profile "$KEYCHAIN_PROFILE" --wait; then
+            echo "✅ PKG Notarization Successful!"
+            echo "🏷️  Stapling Notarization ticket to PKG..."
+            xcrun stapler staple "$PKG_PATH" || true
+        else
+            echo "❌ PKG Notarization Failed"
+            exit 1
+        fi
     fi
 
-    if [ "$NOTARIZE_SUCCESS" = true ]; then
-        echo "🏷️  Stapling Notarization ticket to App Bundle..."
-        xcrun stapler staple "$APP_BUNDLE" || true
+    # Notarize DMG
+    if [ -f "$DMG_PATH" ]; then
+        echo "☁️  Submitting DMG installer: $DMG_PATH"
+        if xcrun notarytool submit "$DMG_PATH" --keychain-profile "$KEYCHAIN_PROFILE" --wait; then
+            echo "✅ DMG Notarization Successful!"
+            echo "🏷️  Stapling Notarization ticket to DMG..."
+            xcrun stapler staple "$DMG_PATH" || true
+        else
+            echo "❌ DMG Notarization Failed"
+            exit 1
+        fi
     fi
+    
+    # Also staple the App Bundle itself
+    echo "🏷️  Stapling Notarization ticket to App Bundle..."
+    xcrun stapler staple "$APP_BUNDLE" || true
 fi
-
-# ── Create Official macOS .pkg & .dmg Installer Packages ─────────────────────
-echo "📦 Generating macOS .pkg & .dmg Installer Packages..."
-pkgbuild --root "$APP_BUNDLE" \
-         --install-location "$INSTALL_PATH" \
-         --identifier "com.antigravity.nointeraction" \
-         --version "1.2.0" \
-         "$PKG_PATH" 2>&1
-
-hdiutil create -volname "NoInteraction Installer" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$DMG_PATH"
 
 # ── Install to /Applications ──────────────────────────────────────────────────
 echo "📲 Installing to /Applications..."
 pkill -x NoInteraction 2>/dev/null || true
 sleep 0.5
 
-rm -rf "$INSTALL_PATH"
-cp -R "$APP_BUNDLE" "$INSTALL_PATH"
+if [ -d "$INSTALL_PATH" ]; then
+    echo "🔑 Requesting sudo permission to remove previous installation..."
+    sudo rm -rf "$INSTALL_PATH"
+fi
+sudo cp -R "$APP_BUNDLE" "$INSTALL_PATH"
 
 echo "✅ Installed: $INSTALL_PATH"
 
@@ -106,3 +148,4 @@ open "$INSTALL_PATH"
 echo ""
 echo "🚀 NoInteraction v1.2 successfully built, signed & launched!"
 echo "📦 .pkg Installer available at: $PKG_PATH"
+echo "📦 .dmg Installer available at: $DMG_PATH"
