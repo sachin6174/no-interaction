@@ -19,6 +19,8 @@ let package = Package(
                 "Core/VisionOCRScanner.swift",
                 "Core/ClickAutomation.swift",
                 "Core/ApproverEngine.swift",
+                "Core/TerminalObserver.swift",
+                "Core/TerminalApproverEngine.swift",
                 "UI/DashboardView.swift",
                 "UI/MenuBarManager.swift"
             ]

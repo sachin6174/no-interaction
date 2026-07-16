@@ -335,6 +335,12 @@ Your objective is to optimize this application to the absolute highest tier of s
 
     // MARK: - Logging & Audio Feedback
 
+    /// Entry point for other engines (e.g. `TerminalApproverEngine`) to share the same
+    /// Activity Log and sound feedback instead of keeping a separate log per source.
+    public func recordExternal(appName: String, text: String, method: String) {
+        record(appName: appName, text: text, method: method)
+    }
+
     private func record(appName: String, text: String, method: String) {
         self.totalApprovalsCount += 1
         let entry = LogEntry(

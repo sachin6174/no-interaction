@@ -5,6 +5,7 @@ enum DashboardTab: Int, Hashable {
     case activityLog = 0
     case rules = 1
     case promptQueue = 2
+    case terminals = 3
 }
 
 @MainActor
@@ -18,6 +19,7 @@ final class DashboardViewModel: ObservableObject {
 
 struct DashboardView: View {
     @ObservedObject var engine = ApproverEngine.shared
+    @ObservedObject var terminalEngine = TerminalApproverEngine.shared
     @StateObject private var vm = DashboardViewModel()
     @State private var isMonitoringHovered = false
     @State private var isSoundHovered = false
@@ -148,6 +150,7 @@ struct DashboardView: View {
                 tabBtn("Activity Log", tab: .activityLog, icon: "text.justify.left")
                 tabBtn("Approval Rules", tab: .rules, icon: "slider.horizontal.3")
                 tabBtn("Prompt Queue", tab: .promptQueue, icon: "square.stack.3d.down.right.fill")
+                tabBtn("Terminals", tab: .terminals, icon: "terminal")
                 
                 Spacer()
                 
@@ -177,6 +180,8 @@ struct DashboardView: View {
                     RulesView(engine: engine, newBtn: $vm.newButtonKeyword, newChk: $vm.newCheckboxKeyword)
                 case .promptQueue:
                     PromptQueueView(engine: engine, newPromptText: $vm.newPromptText)
+                case .terminals:
+                    TerminalsView(engine: terminalEngine)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -760,6 +765,105 @@ struct PromptQueueView: View {
             }
             .padding(16)
         }
+    }
+}
+
+// MARK: - Terminals View
+
+struct TerminalsView: View {
+    @ObservedObject var engine: TerminalApproverEngine
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+
+                // Header Card
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Terminal.app Sessions").font(.system(size: 15, weight: .bold, design: .rounded))
+                        Text("Attach a tab to auto-press Return when it shows a y/n or continue prompt.")
+                            .font(.system(size: 11)).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $engine.isMonitoringEnabled.animation(.spring()))
+                        .toggleStyle(SwitchToggleStyle(tint: .green))
+                        .labelsHidden()
+                        .controlSize(.small)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.02)))
+
+                if !engine.isMonitoringEnabled {
+                    emptyState("Monitoring Paused", "Enable monitoring to discover open Terminal.app windows and tabs.")
+                } else if engine.sessions.isEmpty {
+                    emptyState("No Sessions Found", "Open a Terminal.app window or tab to see it listed here.")
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(engine.sessions) { session in
+                            TerminalSessionRow(session: session, onToggleAttach: {
+                                engine.setAttached(!session.isAttached, tty: session.tty)
+                            })
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    @ViewBuilder
+    private func emptyState(_ title: String, _ subtitle: String) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: "terminal")
+                .font(.system(size: 28))
+                .foregroundColor(.accentColor.opacity(0.5))
+            Text(title).font(.system(size: 13, weight: .bold, design: .rounded))
+            Text(subtitle)
+                .font(.system(size: 11)).foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 36)
+    }
+}
+
+struct TerminalSessionRow: View {
+    let session: TerminalSession
+    let onToggleAttach: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Circle()
+                .fill(session.isWaitingForInput ? Color.orange : (session.isBusy ? Color.blue : Color.gray.opacity(0.5)))
+                .frame(width: 8, height: 8)
+                .padding(.top, 5)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(session.displayName)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                Text(session.lastLine.isEmpty ? "—" : session.lastLine)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                if session.isWaitingForInput {
+                    Text("Waiting for input — will press Return")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.orange)
+                }
+            }
+
+            Spacer()
+
+            Toggle("Attach", isOn: Binding(get: { session.isAttached }, set: { _ in onToggleAttach() }))
+                .toggleStyle(SwitchToggleStyle(tint: .green))
+                .font(.system(size: 10, weight: .semibold))
+                .controlSize(.small)
+                .fixedSize()
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.02)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.04), lineWidth: 1))
     }
 }
 

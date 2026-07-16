@@ -30,5 +30,7 @@
 	<string>Copyright © 2026 Sachin Kumar. All rights reserved.</string>
 	<key>NSAccessibilityUsageDescription</key>
 	<string>NoInteraction requires Accessibility permissions to observe and auto-approve Anti-Gravity IDE prompts.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>NoInteraction sends a Return keypress to Terminal.app tabs you attach, so it can auto-dismiss yes/no and continue prompts.</string>
 </dict>
 </plist>

@@ -104,3 +104,65 @@ public enum KeywordMatcher {
         cacheLock.unlock()
     }
 }
+
+// MARK: - Terminal Session
+
+/// One Terminal.app tab, identified by its tty (stable for the life of the shell session).
+public struct TerminalSession: Identifiable, Equatable {
+    public var id: String { tty }
+    public var windowId: Int
+    public var tabIndex: Int
+    public var tty: String
+    public var isBusy: Bool
+    public var lastLine: String
+    public var isAttached: Bool
+    public var isWaitingForInput: Bool
+
+    public var displayName: String {
+        let short = tty.replacingOccurrences(of: "/dev/", with: "")
+        return "Window \(windowId) · Tab \(tabIndex) (\(short))"
+    }
+
+    public init(
+        windowId: Int,
+        tabIndex: Int,
+        tty: String,
+        isBusy: Bool,
+        lastLine: String,
+        isAttached: Bool = false,
+        isWaitingForInput: Bool = false
+    ) {
+        self.windowId = windowId
+        self.tabIndex = tabIndex
+        self.tty = tty
+        self.isBusy = isBusy
+        self.lastLine = lastLine
+        self.isAttached = isAttached
+        self.isWaitingForInput = isWaitingForInput
+    }
+}
+
+// MARK: - Terminal Prompt Matcher
+
+/// Detects whether the last visible line of a terminal tab looks like an interactive
+/// yes/no or "press enter to continue" prompt that can be safely dismissed with a bare Return.
+public enum TerminalPromptMatcher {
+    public static let defaultPatterns: [String] = [
+        "(y/n)", "[y/n]", "(yes/no)", "[yes/no]",
+        "continue?", "proceed?", "overwrite?", "are you sure",
+        "press enter", "press return", "press any key"
+    ]
+
+    /// Lines containing these fragments are never auto-confirmed, even if they also match a pattern above —
+    /// pressing Return would submit an empty value rather than "allow" anything.
+    private static let excludedFragments: [String] = ["password", "passphrase"]
+
+    public static func isPrompt(line: String, patterns: [String] = defaultPatterns) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return false }
+        let lower = trimmed.lowercased()
+        guard !excludedFragments.contains(where: { lower.contains($0) }) else { return false }
+        if lower.hasSuffix("?") { return true }
+        return patterns.contains { lower.contains($0) }
+    }
+}
