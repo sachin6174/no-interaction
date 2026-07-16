@@ -12,10 +12,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Show Dock icon as requested by user
         NSApp.setActivationPolicy(.regular)
 
-        if let iconImage = NSImage(named: "AppIcon") {
-            NSApp.applicationIconImage = iconImage
-        }
-
         MenuBarManager.shared.setupMenuBar()
 
         // Open dashboard on first launch so user sees the permission guide
