@@ -5,13 +5,27 @@ public final class AppObserver {
 
     /// Process names to monitor — matches by substring (case-insensitive)
     /// "Antigravity" covers "Antigravity IDE", "Antigravity IDE Helper (Plugin)", etc.
+    ///
+    /// NOTE: `NSRunningApplication.localizedName` reflects the app's CFBundleDisplayName, which
+    /// for VS Code is just "Code" (not "Visual Studio Code"). A plain substring check in the
+    /// direction `name.contains(target)` can never match a short display name like "Code" against
+    /// a longer target string, so "Code" must be listed explicitly rather than relying on
+    /// "Visual Studio Code" / "VS Code" alone. Bundle identifiers below are the authoritative check.
     public var targetAppNames: [String] = [
         "Antigravity",
         "Anti-Gravity",
         "AntiGravity",
         "Visual Studio Code",
         "VS Code",
-        "VSCode"
+        "VSCode",
+        "Code"
+    ]
+
+    /// Bundle identifiers matched exactly — more reliable than display-name substrings, and immune
+    /// to display-name variants (localization, VS Code editions, etc.).
+    public var targetBundleIdentifiers: [String] = [
+        "com.microsoft.VSCode",
+        "com.microsoft.VSCodeInsiders"
     ]
 
     private init() {}
@@ -23,8 +37,11 @@ public final class AppObserver {
 
     /// Checks if a running application is a code editor (VS Code, Cursor, Windsurf, etc.)
     public func isEditor(_ app: NSRunningApplication) -> Bool {
+        if let bundleId = app.bundleIdentifier, targetBundleIdentifiers.contains(bundleId) {
+            return true
+        }
         guard let name = app.localizedName?.lowercased() else { return false }
-        let editors = ["visual studio code", "vs code", "vscode", "cursor", "windsurf", "antigravity"]
+        let editors = ["visual studio code", "vs code", "vscode", "code", "cursor", "windsurf", "antigravity"]
         return editors.contains { name.contains($0) }
     }
 
@@ -57,10 +74,14 @@ public final class AppObserver {
         return keywords.contains { lower.contains($0) }
     }
 
-    /// Returns all running applications whose localizedName contains any target name.
+    /// Returns all running applications matching a known bundle identifier or whose
+    /// localizedName contains any target name.
     public func findTargetApplications(customTargets: [String] = []) -> [NSRunningApplication] {
         let allTargets = (targetAppNames + customTargets).filter { !$0.isEmpty }
         return NSWorkspace.shared.runningApplications.filter { app in
+            if let bundleId = app.bundleIdentifier, targetBundleIdentifiers.contains(bundleId) {
+                return true
+            }
             guard let name = app.localizedName else { return false }
             return allTargets.contains { name.localizedCaseInsensitiveContains($0) }
         }
