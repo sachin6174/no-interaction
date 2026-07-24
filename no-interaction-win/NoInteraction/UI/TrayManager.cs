@@ -7,7 +7,7 @@ namespace NoInteraction.UI
 {
     /// <summary>
     /// System tray equivalent of the Mac build's MenuBarManager: a status icon with a
-    /// right-click menu (pause/resume, mute/unmute, open dashboard, quit) and left-click
+    /// right-click menu (pause/resume, mute/unmute, open dashboard, quit) and left-click/double-click
     /// to open the dashboard.
     /// </summary>
     public sealed class TrayManager : IDisposable
@@ -26,9 +26,18 @@ namespace NoInteraction.UI
                 Visible = true,
                 Text = "NoInteraction"
             };
-            _icon.Click += (_, _) => ShowDashboard();
-            UpdateIcon();
+            
+            _icon.MouseClick += (s, e) =>
+            {
+                if (e.Button == MouseButtons.Left)
+                {
+                    ShowDashboard();
+                }
+            };
+            
+            _icon.DoubleClick += (_, _) => ShowDashboard();
 
+            UpdateIcon();
             ApproverEngine.Shared.PropertyChanged += (_, _) => UpdateIcon();
         }
 
@@ -37,13 +46,44 @@ namespace NoInteraction.UI
             if (_icon == null) return;
             var engine = ApproverEngine.Shared;
 
-            var systemIcon = engine.IsEnabled ? SystemIcons.Shield : SystemIcons.Application;
-            _icon.Icon = systemIcon;
+            try
+            {
+                _icon.Icon = CreateTrayIcon(engine.IsEnabled);
+            }
+            catch
+            {
+                _icon.Icon = engine.IsEnabled ? SystemIcons.Shield : SystemIcons.Application;
+            }
 
             var statusText = engine.IsEnabled ? "Active — Monitoring Prompts" : "Paused";
             _icon.Text = $"NoInteraction — {statusText}";
-
             _icon.ContextMenuStrip = BuildMenu();
+        }
+
+        private Icon CreateTrayIcon(bool active)
+        {
+            using var bmp = new Bitmap(32, 32);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                g.Clear(Color.Transparent);
+
+                // Draw solid rounded background (Catppuccin Mauve when active, Muted Gray when paused)
+                using var bgBrush = new SolidBrush(active ? Color.FromArgb(203, 166, 247) : Color.FromArgb(108, 112, 134));
+                g.FillEllipse(bgBrush, 2, 2, 28, 28);
+
+                // Draw inner dark symbol "N"
+                using var font = new Font("Segoe UI", 16, FontStyle.Bold, GraphicsUnit.Pixel);
+                using var textBrush = new SolidBrush(Color.FromArgb(30, 30, 46));
+                var format = new StringFormat
+                {
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center
+                };
+                g.DrawString("N", font, textBrush, new RectangleF(0, 0, 32, 32), format);
+            }
+            IntPtr hIcon = bmp.GetHicon();
+            return Icon.FromHandle(hIcon);
         }
 
         private ContextMenuStrip BuildMenu()
@@ -87,9 +127,16 @@ namespace NoInteraction.UI
                 _dashboard = new DashboardWindow();
                 _dashboard.Closed += (_, _) => _dashboard = null;
             }
+
+            if (_dashboard.WindowState == System.Windows.WindowState.Minimized)
+            {
+                _dashboard.WindowState = System.Windows.WindowState.Normal;
+            }
+
             _dashboard.Show();
             _dashboard.Activate();
-            _dashboard.WindowState = System.Windows.WindowState.Normal;
+            _dashboard.Topmost = true;
+            _dashboard.Topmost = false;
         }
 
         public void Dispose()
