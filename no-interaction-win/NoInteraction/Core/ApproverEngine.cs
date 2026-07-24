@@ -56,8 +56,8 @@ namespace NoInteraction.Core
 
         private static readonly string[] DefaultButtons =
         {
-            "Submit", "Allow", "Yes, allow", "Yes, and always", "Approve",
-            "Yes", "Confirm", "Proceed", "Accept", "Continue", "OK"
+            "Submit", "Allow", "Always Allow", "Allow All", "Yes, allow", "Yes, and always", "Approve",
+            "Yes", "Confirm", "Proceed", "Accept", "Continue", "OK", "Trust", "Got it", "Install", "Open"
         };
         private static readonly string[] DefaultCheckboxes =
         {

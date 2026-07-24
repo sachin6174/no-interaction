@@ -125,7 +125,12 @@ namespace NoInteraction.Core
             if (!TryGetControlType(element, out var controlType)) return null;
             if (IsIgnoredElement(element, controlType)) return null;
 
-            if (controlType == ControlType.Button || controlType == ControlType.SplitButton || controlType == ControlType.RadioButton)
+            if (controlType == ControlType.Button || 
+                controlType == ControlType.SplitButton || 
+                controlType == ControlType.RadioButton || 
+                controlType == ControlType.Custom || 
+                controlType == ControlType.Hyperlink || 
+                controlType == ControlType.MenuItem)
             {
                 if (controlType == ControlType.RadioButton && hasSelection) return null;
 
