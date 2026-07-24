@@ -52,7 +52,7 @@ struct DashboardView: View {
                     HStack(spacing: 6) {
                         Text("NoInteraction")
                             .font(.system(size: 16, weight: .bold, design: .rounded))
-                        Text("v1.2")
+                        Text("v1.4")
                             .font(.system(size: 9, weight: .bold, design: .monospaced))
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Capsule().fill(Color.primary.opacity(0.08)))

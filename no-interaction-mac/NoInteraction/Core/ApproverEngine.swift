@@ -55,8 +55,9 @@ public final class ApproverEngine: ObservableObject {
 
     // Default Fallback Rules
     private static let defaultButtons = [
-        "Submit", "Allow", "Yes, allow", "Yes, and always", "Approve",
-        "Yes", "Confirm", "Proceed", "Accept", "Continue", "OK"
+        "Submit", "Yes, allow this time", "Yes, allow", "Allow running this command",
+        "Allow", "Yes, and always", "Approve", "Yes", "Confirm", "Proceed",
+        "Accept", "Continue", "OK"
     ]
     private static let defaultCheckboxes = [
         "Remember", "Always", "Trust", "Don't ask", "Don't show"
@@ -231,7 +232,35 @@ Your objective is to optimize this application to the absolute highest tier of s
                     return
                 }
 
-                // Prompt Queue Check or Loop Mode Check
+                // Pass 2: Vision OCR (Fallback if AX is blocked or missed)
+                if !self.visionScanInFlight, let bounds = AppObserver.shared.getWindowBounds(for: app) {
+                    self.visionScanInFlight = true
+                    let capturedPid = pid
+
+                    let ocrResult = await withCheckedContinuation { (continuation: CheckedContinuation<(CGPoint?, String?), Never>) in
+                        VisionOCRScanner.shared.scanRegionForKeywords(
+                            windowBounds: bounds,
+                            buttonKeywords: buttons
+                        ) { point, text in
+                            continuation.resume(returning: (point, text))
+                        }
+                    }
+                    
+                    self.visionScanInFlight = false
+                    if let pt = ocrResult.0, let text = ocrResult.1 {
+                        if Date().timeIntervalSince(self.lastActionTime) >= self.cooldown {
+                            self.lastActionTime = Date()
+                            ClickAutomation.shared.performClick(at: pt, targetPid: capturedPid) {
+                                Task { @MainActor in
+                                    self.record(appName: appName, text: text, method: "Vision OCR")
+                                }
+                            }
+                        }
+                        return
+                    }
+                }
+
+                // Pass 3: Prompt Queue Check or Loop Mode Check (ONLY if no approval buttons were found)
                 let shouldCheckPromptState = (self.isPromptQueueActive && self.currentPromptIndex < self.promptQueue.count) ||
                                              (self.loopModeEnabled && (self.loopModeLimit == 0 || self.loopModeCounter < self.loopModeLimit))
 
@@ -265,32 +294,6 @@ Your objective is to optimize this application to the absolute highest tier of s
                         let prompt = self.loopModeEnabled ? ApproverEngine.defaultPrompt : self.promptQueue[self.currentPromptIndex]
                         await self.pastePrompt(prompt: prompt, toInput: input, forApp: app)
                         return
-                    }
-                }
-
-                // Pass 2: Vision OCR (Fallback if AX is blocked)
-                guard !self.visionScanInFlight else { return }
-                guard let bounds = AppObserver.shared.getWindowBounds(for: app) else { return }
-
-                self.visionScanInFlight = true
-                let capturedPid = pid
-
-                VisionOCRScanner.shared.scanRegionForKeywords(
-                    windowBounds: bounds,
-                    buttonKeywords: buttons
-                ) { [weak self] clickPoint, matchedText in
-                    guard let self else { return }
-                    Task { @MainActor in
-                        self.visionScanInFlight = false
-                        guard let pt = clickPoint, let text = matchedText else { return }
-                        guard Date().timeIntervalSince(self.lastActionTime) >= self.cooldown else { return }
-                        self.lastActionTime = Date()
-
-                        ClickAutomation.shared.performClick(at: pt, targetPid: capturedPid) {
-                            Task { @MainActor in
-                                self.record(appName: appName, text: text, method: "Vision OCR")
-                            }
-                        }
                     }
                 }
             }

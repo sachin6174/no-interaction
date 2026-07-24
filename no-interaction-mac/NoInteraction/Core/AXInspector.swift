@@ -127,34 +127,34 @@ public final class AXInspector {
         if shouldIgnore { return nil }
 
         // Button roles in native macOS and Electron web views
-        if role == "AXButton" || role == "AXPopUpButton" || role == "AXRadioButton" {
+        let isCandidateRole = role == "AXButton" || role == "AXPopUpButton" || role == "AXRadioButton" || role == "AXLink" || role == "AXGroup" || role == "AXGenericContainer" || role == "AXCell" || role == "AXStaticText"
+        if isCandidateRole {
             // Skip unselected radio buttons if an option is already selected
-            if role == "AXRadioButton" && hasSelection {
-                return nil
-            }
-            
-            let label = buttonLabel(element)
-            let isMatch = !label.isEmpty && keywords.contains { KeywordMatcher.matches(label: label, keyword: $0) }
+            let skipRadio = (role == "AXRadioButton" && hasSelection)
+            if !skipRadio {
+                let label = buttonLabel(element)
+                let isMatch = !label.isEmpty && label.count <= 60 && keywords.contains { KeywordMatcher.matches(label: label, keyword: $0) }
 
-            if isMatch {
-                // Primary action: AXPress (Native accessibility action — 100% silent, 0% cursor movement)
-                let pressResult = AXUIElementPerformAction(element, kAXPressAction as CFString)
-                let center = centerOf(element)
-                let display = label.isEmpty ? "Approval Button" : label
+                if isMatch {
+                    // Primary action: AXPress (Native accessibility action — 100% silent, 0% cursor movement)
+                    let pressResult = AXUIElementPerformAction(element, kAXPressAction as CFString)
+                    let center = centerOf(element)
+                    let display = label.isEmpty ? "Approval Button" : label
 
-                if pressResult == .success {
-                    print("🚀 AXInspector: AXPress succeeded on '\(display)' (role=\(role), depth=\(depth))")
-                    return InspectionResult(action: "AXPress", elementText: display, position: center)
-                } else if let pt = center {
-                    // Secondary action: AXClick fallback
-                    let clickResult = AXUIElementPerformAction(element, "AXClick" as CFString)
-                    if clickResult == .success {
-                        print("🚀 AXInspector: AXClick succeeded on '\(display)'")
-                        return InspectionResult(action: "AXClick", elementText: display, position: center)
+                    if pressResult == .success {
+                        print("🚀 AXInspector: AXPress succeeded on '\(display)' (role=\(role), depth=\(depth))")
+                        return InspectionResult(action: "AXPress", elementText: display, position: center)
+                    } else if let pt = center {
+                        // Secondary action: AXClick fallback
+                        let clickResult = AXUIElementPerformAction(element, "AXClick" as CFString)
+                        if clickResult == .success {
+                            print("🚀 AXInspector: AXClick succeeded on '\(display)'")
+                            return InspectionResult(action: "AXClick", elementText: display, position: center)
+                        }
+
+                        print("⚠️ AXInspector: AXPress/AXClick failed for '\(display)', requesting CGClick fallback at \(pt)")
+                        return InspectionResult(action: "Fallback CGEvent Click Needed", elementText: display, position: pt)
                     }
-
-                    print("⚠️ AXInspector: AXPress/AXClick failed for '\(display)', requesting CGClick fallback at \(pt)")
-                    return InspectionResult(action: "Fallback CGEvent Click Needed", elementText: display, position: pt)
                 }
             }
         }
@@ -243,21 +243,30 @@ public final class AXInspector {
             .joined(separator: " ")
     }
 
-    /// Reads direct label + searches child text nodes (Crucial for Electron webview buttons!)
+    /// Reads direct label + searches child text nodes recursively up to 3 levels (Crucial for Electron webview buttons!)
     private func buttonLabel(_ el: AXUIElement) -> String {
         var text = directLabel(el)
         if text.isEmpty {
-            for child in childElements(el) {
-                let childRole = stringAttr(child, kAXRoleAttribute as CFString)
-                if childRole == "AXStaticText" || childRole == "AXHeading" || childRole == "" {
-                    let childText = directLabel(child)
-                    if !childText.isEmpty {
-                        text += (text.isEmpty ? "" : " ") + childText
-                    }
+            text = recursiveChildText(el, depth: 0)
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func recursiveChildText(_ el: AXUIElement, depth: Int) -> String {
+        guard depth <= 3 else { return "" }
+        var parts: [String] = []
+        for child in childElements(el) {
+            let childText = directLabel(child)
+            if !childText.isEmpty {
+                parts.append(childText)
+            } else {
+                let deep = recursiveChildText(child, depth: depth + 1)
+                if !deep.isEmpty {
+                    parts.append(deep)
                 }
             }
         }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return parts.joined(separator: " ")
     }
 
     private func childElements(_ el: AXUIElement) -> [AXUIElement] {

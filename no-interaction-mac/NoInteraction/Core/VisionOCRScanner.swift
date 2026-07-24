@@ -87,10 +87,9 @@ public final class VisionOCRScanner {
 
     // MARK: – Helpers
 
-    /// Returns only the bottom 18 % of the window — where Submit/Skip live.
-    /// This avoids false-matching "Yes" / "Allow" inside the editor or sidebar.
+    /// Returns the lower 75% of the window — where prompt dialogs, choices, and Submit/Skip live.
     private func buttonStripRect(from bounds: CGRect) -> CGRect {
-        let stripH = max(80, bounds.height * 0.30)
+        let stripH = max(150, bounds.height * 0.75)
         return CGRect(
             x:      bounds.minX,
             y:      bounds.maxY - stripH,

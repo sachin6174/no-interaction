@@ -15,17 +15,29 @@ public final class AppObserver {
         "Antigravity",
         "Anti-Gravity",
         "AntiGravity",
+        "Antigravity IDE",
+        "Antigravity Studio",
+        "AGY",
+        "Gemini",
         "Visual Studio Code",
         "VS Code",
         "VSCode",
-        "Code"
+        "Code",
+        "Cursor",
+        "Windsurf"
     ]
 
     /// Bundle identifiers matched exactly — more reliable than display-name substrings, and immune
     /// to display-name variants (localization, VS Code editions, etc.).
     public var targetBundleIdentifiers: [String] = [
+        "com.google.antigravity-ide",
+        "com.google.antigravity",
+        "com.antigravity.ide",
         "com.microsoft.VSCode",
-        "com.microsoft.VSCodeInsiders"
+        "com.microsoft.VSCodeInsiders",
+        "com.todesktop.230527b84wsaw5b",
+        "com.exafunction.windsurf",
+        "com.visualstudio.code"
     ]
 
     private init() {}

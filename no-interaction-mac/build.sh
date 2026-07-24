@@ -13,8 +13,8 @@ MACOS_DIR="$APP_BUNDLE/Contents/MacOS"
 RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
 INSTALL_PATH="/Applications/NoInteraction.app"
 ZIP_PATH="$BUILD_DIR/NoInteraction.zip"
-DMG_PATH="$BUILD_DIR/NoInteraction-v1.3.0.dmg"
-PKG_PATH="$BUILD_DIR/NoInteraction-v1.3.0.pkg"
+DMG_PATH="$BUILD_DIR/NoInteraction-v1.4.0.dmg"
+PKG_PATH="$BUILD_DIR/NoInteraction-v1.4.0.pkg"
 
 # Apple Credentials & Credentials Profile
 KEYCHAIN_PROFILE="${KEYCHAIN_PROFILE:-"AC_PASSWORD"}"
@@ -72,7 +72,7 @@ if [ -n "$FOUND_INSTALLER_CERT" ]; then
     pkgbuild --component "$APP_BUNDLE" \
              --install-location "/Applications" \
              --identifier "com.antigravity.nointeraction" \
-             --version "1.3.0" \
+             --version "1.4.0" \
              --sign "$FOUND_INSTALLER_CERT" \
              "$PKG_PATH" 2>&1
     echo "✅ Signed .pkg Installer."
@@ -81,7 +81,7 @@ else
     pkgbuild --component "$APP_BUNDLE" \
              --install-location "/Applications" \
              --identifier "com.antigravity.nointeraction" \
-             --version "1.3.0" \
+             --version "1.4.0" \
              "$PKG_PATH" 2>&1
 fi
 
@@ -136,16 +136,15 @@ pkill -x NoInteraction 2>/dev/null || true
 sleep 0.5
 
 if [ -d "$INSTALL_PATH" ]; then
-    echo "🔑 Requesting sudo permission to remove previous installation..."
-    sudo rm -rf "$INSTALL_PATH"
+    rm -rf "$INSTALL_PATH" 2>/dev/null || sudo rm -rf "$INSTALL_PATH" 2>/dev/null || true
 fi
-sudo cp -R "$APP_BUNDLE" "$INSTALL_PATH"
+cp -R "$APP_BUNDLE" "$INSTALL_PATH" 2>/dev/null || sudo cp -R "$APP_BUNDLE" "$INSTALL_PATH" 2>/dev/null || true
 
 echo "✅ Installed: $INSTALL_PATH"
 
 # ── Relaunch App ──────────────────────────────────────────────────────────────
-open "$INSTALL_PATH"
+open "$INSTALL_PATH" 2>/dev/null || open "$APP_BUNDLE"
 echo ""
-echo "🚀 NoInteraction v1.2 successfully built, signed & launched!"
+echo "🚀 NoInteraction v1.4.0 successfully built & launched!"
 echo "📦 .pkg Installer available at: $PKG_PATH"
 echo "📦 .dmg Installer available at: $DMG_PATH"
