@@ -13,8 +13,8 @@ MACOS_DIR="$APP_BUNDLE/Contents/MacOS"
 RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
 INSTALL_PATH="/Applications/NoInteraction.app"
 ZIP_PATH="$BUILD_DIR/NoInteraction.zip"
-DMG_PATH="$BUILD_DIR/NoInteraction-v1.2.0.dmg"
-PKG_PATH="$BUILD_DIR/NoInteraction-v1.2.0.pkg"
+DMG_PATH="$BUILD_DIR/NoInteraction-v1.3.0.dmg"
+PKG_PATH="$BUILD_DIR/NoInteraction-v1.3.0.pkg"
 
 # Apple Credentials & Credentials Profile
 KEYCHAIN_PROFILE="${KEYCHAIN_PROFILE:-"AC_PASSWORD"}"
@@ -72,7 +72,7 @@ if [ -n "$FOUND_INSTALLER_CERT" ]; then
     pkgbuild --component "$APP_BUNDLE" \
              --install-location "/Applications" \
              --identifier "com.antigravity.nointeraction" \
-             --version "1.2.0" \
+             --version "1.3.0" \
              --sign "$FOUND_INSTALLER_CERT" \
              "$PKG_PATH" 2>&1
     echo "✅ Signed .pkg Installer."
@@ -81,7 +81,7 @@ else
     pkgbuild --component "$APP_BUNDLE" \
              --install-location "/Applications" \
              --identifier "com.antigravity.nointeraction" \
-             --version "1.2.0" \
+             --version "1.3.0" \
              "$PKG_PATH" 2>&1
 fi
 
