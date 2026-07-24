@@ -294,7 +294,7 @@ namespace NoInteraction.Core
             var result = new List<AutomationElement>();
             try
             {
-                var children = element.FindAll(TreeScope.Children, Condition.TrueCondition);
+                var children = element.FindAll(TreeScope.Children, System.Windows.Automation.Condition.TrueCondition);
                 foreach (AutomationElement child in children) result.Add(child);
             }
             catch
