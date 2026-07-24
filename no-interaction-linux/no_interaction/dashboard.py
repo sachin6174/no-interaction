@@ -131,7 +131,6 @@ class Dashboard(tk.Tk):
         top.pack(fill="x", pady=(0, 8))
         
         self.search_var = tk.StringVar()
-        self.search_var.trace_add("write", lambda *_: self.refresh_log())
         
         search_entry = ttk.Entry(top, textvariable=self.search_var, font=("Sans", 10))
         search_entry.pack(side="left", fill="x", expand=True)
@@ -158,6 +157,8 @@ class Dashboard(tk.Tk):
         
         scrollbar.pack(side="right", fill="y")
         self.log_tree.pack(fill="both", expand=True)
+
+        self.search_var.trace_add("write", lambda *_: self.refresh_log())
 
     def _build_rules_tab(self):
         tab = ttk.Frame(self.notebook, padding=12)
