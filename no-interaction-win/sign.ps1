@@ -49,5 +49,10 @@ try {
 Write-Host "Signing $ExePath with SHA256 Authenticode signature..." -ForegroundColor Cyan
 $status = Set-AuthenticodeSignature -FilePath $ExePath -Certificate $cert -HashAlgorithm SHA256
 
+if ($status.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+    Write-Error "Code signing failed: $($status.StatusMessage)"
+    exit 1
+}
+
 Write-Host "Executable successfully code-signed!" -ForegroundColor Green
 Get-AuthenticodeSignature $ExePath | Format-List Path, Status, StatusMessage, SignerCertificate

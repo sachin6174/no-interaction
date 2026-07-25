@@ -212,7 +212,9 @@ Your objective is to optimize this application to the absolute highest tier of s
                 checkboxes = CheckboxRules.Where(r => r.IsEnabled).Select(r => r.Keyword).ToList();
             });
 
-            if (buttons.Count == 0) return;
+            // Note: checkbox ticking still needs to happen even when there are no enabled
+            // button rules, so only bail out when there's nothing at all to look for.
+            if (buttons.Count == 0 && checkboxes.Count == 0) return;
 
             foreach (var app in targetApps)
             {
@@ -240,8 +242,9 @@ Your objective is to optimize this application to the absolute highest tier of s
                 }
             }
 
-            // Pass 2: OCR fallback if nothing was found via UI Automation
-            if (_ocrScanInFlight) return;
+            // Pass 2: OCR fallback if nothing was found via UI Automation (OCR only ever
+            // looks for button text, so skip it entirely when there are no button rules).
+            if (_ocrScanInFlight || buttons.Count == 0) return;
             foreach (var app in targetApps)
             {
                 var bounds = AppObserver.Shared.GetWindowBounds(app);

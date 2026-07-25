@@ -16,6 +16,10 @@ namespace NoInteraction.UI
 
         private NotifyIcon? _icon;
         private DashboardWindow? _dashboard;
+        private IntPtr _currentHIcon = IntPtr.Zero;
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        private static extern bool DestroyIcon(IntPtr handle);
 
         private TrayManager() { }
 
@@ -46,13 +50,26 @@ namespace NoInteraction.UI
             if (_icon == null) return;
             var engine = ApproverEngine.Shared;
 
+            // Bitmap.GetHicon() allocates a brand-new native GDI icon handle every call, and
+            // Icon.FromHandle() does NOT take ownership of it — it must be destroyed manually
+            // or it leaks. UpdateIcon() runs on every property change (every approval, every
+            // toggle), so an unmanaged app would exhaust its GDI handle quota over long uptime.
+            var previousHIcon = _currentHIcon;
+            _currentHIcon = IntPtr.Zero;
+
             try
             {
-                _icon.Icon = CreateTrayIcon(engine.IsEnabled);
+                _currentHIcon = CreateTrayIconHandle(engine.IsEnabled);
+                _icon.Icon = Icon.FromHandle(_currentHIcon);
             }
             catch
             {
                 _icon.Icon = engine.IsEnabled ? SystemIcons.Shield : SystemIcons.Application;
+            }
+
+            if (previousHIcon != IntPtr.Zero)
+            {
+                try { DestroyIcon(previousHIcon); } catch { }
             }
 
             var statusText = engine.IsEnabled ? "Active — Monitoring Prompts" : "Paused";
@@ -60,7 +77,7 @@ namespace NoInteraction.UI
             _icon.ContextMenuStrip = BuildMenu();
         }
 
-        private Icon CreateTrayIcon(bool active)
+        private IntPtr CreateTrayIconHandle(bool active)
         {
             using var bmp = new Bitmap(32, 32);
             using (var g = Graphics.FromImage(bmp))
@@ -82,8 +99,7 @@ namespace NoInteraction.UI
                 };
                 g.DrawString("N", font, textBrush, new RectangleF(0, 0, 32, 32), format);
             }
-            IntPtr hIcon = bmp.GetHicon();
-            return Icon.FromHandle(hIcon);
+            return bmp.GetHicon();
         }
 
         private ContextMenuStrip BuildMenu()
@@ -175,6 +191,11 @@ namespace NoInteraction.UI
 
         public void Dispose()
         {
+            if (_currentHIcon != IntPtr.Zero)
+            {
+                try { DestroyIcon(_currentHIcon); } catch { }
+                _currentHIcon = IntPtr.Zero;
+            }
             _icon?.Dispose();
         }
     }

@@ -38,11 +38,16 @@ namespace NoInteraction.Core
             public IntPtr dwExtraInfo;
         }
 
-        [StructLayout(LayoutKind.Explicit)]
+        // INPUT must be Sequential (not a hand-picked FieldOffset) so the CLR inserts the
+        // same platform-correct padding a C compiler would: on x64 the union is 8-byte
+        // aligned (MOUSEINPUT.dwExtraInfo is pointer-sized), so it actually starts at
+        // offset 8, not 4. A hardcoded FieldOffset(4) silently corrupts every SendInput
+        // call on 64-bit Windows — this app only ships as win-x64, so it always would have.
+        [StructLayout(LayoutKind.Sequential)]
         private struct INPUT
         {
-            [FieldOffset(0)] public uint type;
-            [FieldOffset(4)] public MOUSEINPUT mi;
+            public uint type;
+            public MOUSEINPUT mi;
         }
 
         private const uint INPUT_MOUSE = 0;

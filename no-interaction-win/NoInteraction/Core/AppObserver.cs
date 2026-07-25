@@ -83,6 +83,10 @@ namespace NoInteraction.Core
 
             foreach (var proc in Process.GetProcesses())
             {
+                // Process.GetProcesses() hands back a live handle per process; every one we
+                // don't keep in `results` must be disposed here or it leaks a handle on every
+                // scan tick (this loop runs every 1-3.5s for as long as the app is alive).
+                var kept = false;
                 try
                 {
                     if (seenPids.Contains(proc.Id)) continue;
@@ -100,11 +104,16 @@ namespace NoInteraction.Core
                     {
                         results.Add(proc);
                         seenPids.Add(proc.Id);
+                        kept = true;
                     }
                 }
                 catch
                 {
                     // Process may have exited or be inaccessible; skip it.
+                }
+                finally
+                {
+                    if (!kept) proc.Dispose();
                 }
             }
             return results;
