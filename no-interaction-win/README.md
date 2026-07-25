@@ -14,19 +14,40 @@ only automates the approval dialogs themselves.
 - Windows 10 (1903+) or Windows 11
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) to build
 
-## Build
+## Install
+
+Grab `NoInteractionSetup.exe` and double-click it. It's a normal Windows
+installer (built with [Inno Setup](https://jrsoftware.org/isinfo.php)) — no
+admin rights or .NET install needed, since it installs per-user under
+`%LocalAppData%\Programs\NoInteraction` and ships as a self-contained exe.
+It adds a Start Menu entry and uninstaller, with optional checkboxes for a
+desktop shortcut and launching at Windows startup.
+
+To build the installer yourself:
+
+```powershell
+.\build-installer.ps1
+```
+
+Requires the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+and [Inno Setup 6](https://jrsoftware.org/isdl.php)
+(`winget install JRSoftware.InnoSetup`). Produces `dist\NoInteractionSetup.exe`.
+
+## Build (without the installer)
 
 ```powershell
 .\build.ps1
 ```
 
-Produces a self-contained `dist\NoInteraction.exe` — no .NET runtime install
-needed on the target machine.
+Produces a self-contained `dist\NoInteraction.exe` directly — no .NET
+runtime install needed on the target machine, but no Start Menu entry or
+uninstaller either; just the raw exe.
 
 ## Run
 
-Run `dist\NoInteraction.exe`. It starts in the system tray; left-click the
-tray icon to open the dashboard, right-click for the menu (pause/resume,
+Launch it from the Start Menu shortcut (if installed) or run
+`dist\NoInteraction.exe` directly. It starts in the system tray; left-click
+the tray icon to open the dashboard, right-click for the menu (pause/resume,
 mute sound, quit).
 
 ## Notes

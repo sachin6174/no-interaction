@@ -11,7 +11,12 @@ namespace NoInteraction.Core
     {
         public static readonly AppObserver Shared = new();
 
-        /// <summary>Process/window-title fragments to monitor — matches by substring (case-insensitive).</summary>
+        /// <summary>Process/window-title fragments to monitor — matches by substring (case-insensitive).
+        /// Deliberately excludes bare "Code"/"chat": as substrings they match almost anything (any app
+        /// or window with "code" or "chat" anywhere in its title/name — the actual cause of this app
+        /// scanning and clicking inside unrelated windows). VS Code is still caught precisely via its
+        /// exact process name ("Code.exe") in FindTargetApplications/IsEditor below, and via its
+        /// window title, which normally does include "Visual Studio Code".</summary>
         public List<string> TargetAppNames { get; } = new()
         {
             "Antigravity",
@@ -20,7 +25,6 @@ namespace NoInteraction.Core
             "Visual Studio Code",
             "VS Code",
             "VSCode",
-            "Code",
             "Cursor",
             "Windsurf",
             "Chrome",
@@ -33,9 +37,12 @@ namespace NoInteraction.Core
             "Arc"
         };
 
+        /// <summary>Exact (not substring) process names that identify an editor precisely.</summary>
+        private static readonly string[] EditorProcessNames = { "code" };
+
         private static readonly string[] EditorNames =
         {
-            "visual studio code", "vs code", "vscode", "cursor", "windsurf", "antigravity", "code"
+            "visual studio code", "vs code", "vscode", "cursor", "windsurf", "antigravity"
         };
 
         private static readonly string[] BrowserProcessNames =
@@ -47,7 +54,10 @@ namespace NoInteraction.Core
 
         public bool IsEditor(Process app)
         {
-            var name = (SafeMainWindowTitle(app) + " " + app.ProcessName).ToLowerInvariant();
+            var procName = (app.ProcessName ?? "").ToLowerInvariant();
+            if (EditorProcessNames.Contains(procName)) return true;
+
+            var name = (SafeMainWindowTitle(app) + " " + procName);
             return EditorNames.Any(name.Contains);
         }
 
@@ -59,7 +69,10 @@ namespace NoInteraction.Core
 
         public bool IsBrowserOrEditor(Process app) => IsBrowser(app) || IsEditor(app);
 
-        /// <summary>Checks whether a top-level window's title contains any Antigravity or target keyword.</summary>
+        /// <summary>Checks whether a top-level window's title contains any Antigravity or target keyword.
+        /// Deliberately excludes bare "chat"/"code": those match nearly any window title (a coding
+        /// tool's own terminal tab, a support-chat widget, an unrelated "source code" article, ...),
+        /// which was letting this app scan and click inside windows it was never meant to touch.</summary>
         public bool IsAntigravityWindow(AutomationElement window)
         {
             string title;
@@ -67,7 +80,7 @@ namespace NoInteraction.Core
             catch { return false; }
 
             var lower = title.ToLowerInvariant();
-            string[] keywords = { "antigravity", "anti-gravity", "agy", "gemini", "no-interaction", "chat", "code" };
+            string[] keywords = { "antigravity", "anti-gravity", "agy", "gemini", "no-interaction" };
             return keywords.Any(lower.Contains);
         }
 
@@ -95,7 +108,8 @@ namespace NoInteraction.Core
                     var procName = proc.ProcessName ?? "";
                     var haystack = title + " " + procName;
 
-                    bool isMatch = allTargets.Any(t => haystack.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0);
+                    bool isMatch = allTargets.Any(t => haystack.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0)
+                                 || EditorProcessNames.Contains(procName.ToLowerInvariant());
                     if (!isMatch) continue;
 
                     // Ensure the process has top-level windows before considering it active

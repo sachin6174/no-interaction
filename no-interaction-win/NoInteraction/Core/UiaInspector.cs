@@ -155,9 +155,20 @@ namespace NoInteraction.Core
                 if (!(controlType == ControlType.RadioButton && hasSelection))
                 {
                     var label = ElementLabel(element);
-                    bool isMatch = !string.IsNullOrEmpty(label) && label.Length <= 60 && keywords.Any(k => KeywordMatcher.Matches(label, k));
+                    // A single generic word (e.g. "Open", "Run", "Yes") must match the WHOLE
+                    // label exactly — VS Code's real "Quick Open" command button legitimately
+                    // contains "Open" as a whole word, but pressing it opens the command
+                    // palette, not an approval dialog. Multi-word phrases ("Always Allow",
+                    // "Run Command") are distinctive enough to keep using the more permissive
+                    // word-boundary match from KeywordMatcher.
+                    var matchedKeyword = (!string.IsNullOrEmpty(label) && label.Length <= 60)
+                        ? keywords.FirstOrDefault(k => !string.IsNullOrWhiteSpace(k) && (
+                              k.Trim().Contains(' ')
+                                  ? KeywordMatcher.Matches(label, k)
+                                  : string.Equals(label.Trim(), k.Trim(), StringComparison.OrdinalIgnoreCase)))
+                        : null;
 
-                    if (isMatch)
+                    if (matchedKeyword != null)
                     {
                         var display = string.IsNullOrEmpty(label) ? "Approval Button" : label;
                         var center = CenterOf(element);
@@ -171,15 +182,23 @@ namespace NoInteraction.Core
                         {
                             return new InspectionResult("SelectionItem", display, center);
                         }
-                        if (isStrongRole && center.HasValue)
+
+                        // Native invoke failed, so we can't prove this element is really
+                        // clickable — we're about to guess based on label text alone. A bare
+                        // single word like "Run"/"OK"/"Yes" is exactly as likely to be an
+                        // ordinary, unrelated button (a toolbar "Run" button, a "Continue
+                        // reading" link, ...) as it is a real approval prompt. Only risk the
+                        // blind coordinate click for distinctive multi-word phrases ("Always
+                        // Allow", "Run Command", "Yes, allow", ...) that are very unlikely to
+                        // appear anywhere except an actual confirmation dialog.
+                        bool isDistinctiveKeyword = matchedKeyword.Trim().Contains(' ');
+                        if (isStrongRole && isDistinctiveKeyword && center.HasValue)
                         {
                             Console.WriteLine($"[UiaInspector] Native invoke failed for '{display}', requesting fallback click at {center}");
                             return new InspectionResult("Fallback Click Needed", display, center);
                         }
-                        if (isWeakRole)
-                        {
-                            Console.WriteLine($"[UiaInspector] '{display}' (role={controlType.ProgrammaticName}) matched but isn't actually invokable — skipping instead of blind-clicking.");
-                        }
+
+                        Console.WriteLine($"[UiaInspector] '{display}' (role={controlType.ProgrammaticName}) matched '{matchedKeyword}' but isn't provably invokable — skipping instead of guessing.");
                     }
                 }
             }

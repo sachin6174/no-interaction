@@ -82,6 +82,8 @@ no-interaction-linux/htmlcov/
 no-interaction-win/bin/
 no-interaction-win/obj/
 no-interaction-win/dist/
+no-interaction-win/Output/
+no-interaction-win/installer_output/
 no-interaction-win/.vs/
 no-interaction-win/*.user
 no-interaction-win/*.userosv
