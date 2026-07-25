@@ -8,7 +8,7 @@
 ; or just run .\build-installer.ps1, which does both steps.
 
 #define MyAppName "NoInteraction"
-#define MyAppVersion "1.10.0"
+#define MyAppVersion "1.11.0"
 #define MyAppPublisher "NoInteraction"
 #define MyAppExeName "NoInteraction.exe"
 #define MyAppMutex "NoInteraction_SingleInstance_Mutex"
