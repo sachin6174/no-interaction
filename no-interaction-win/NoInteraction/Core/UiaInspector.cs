@@ -125,13 +125,24 @@ namespace NoInteraction.Core
             if (!TryGetControlType(element, out var controlType)) return null;
             if (IsIgnoredElement(element, controlType)) return null;
 
-            bool isCandidateRole = 
-                controlType == ControlType.Button || 
-                controlType == ControlType.SplitButton || 
-                controlType == ControlType.RadioButton || 
-                controlType == ControlType.Custom || 
-                controlType == ControlType.Hyperlink || 
-                controlType == ControlType.MenuItem ||
+            // "Strong" roles are natively actionable controls: if their label matches and
+            // Invoke isn't wired up, we still trust a blind coordinate click because the
+            // control type itself proves it's really a button. "Weak" roles (Custom/Group/
+            // Pane/Text/Document/ListItem/Image) exist to catch Electron/Chromium buttons
+            // that don't map to a native role — but plenty of ordinary, non-clickable text,
+            // panes, and images match those roles too. For those we require proof: only act
+            // if TryInvoke (or a selection/toggle pattern) actually succeeds. If it doesn't,
+            // that's not a button — keep scanning instead of blind-clicking wherever the
+            // matching text happens to be on screen.
+            bool isStrongRole =
+                controlType == ControlType.Button ||
+                controlType == ControlType.SplitButton ||
+                controlType == ControlType.RadioButton ||
+                controlType == ControlType.Hyperlink ||
+                controlType == ControlType.MenuItem;
+
+            bool isWeakRole =
+                controlType == ControlType.Custom ||
                 controlType == ControlType.Group ||
                 controlType == ControlType.Pane ||
                 controlType == ControlType.Text ||
@@ -139,7 +150,7 @@ namespace NoInteraction.Core
                 controlType == ControlType.ListItem ||
                 controlType == ControlType.Image;
 
-            if (isCandidateRole)
+            if (isStrongRole || isWeakRole)
             {
                 if (!(controlType == ControlType.RadioButton && hasSelection))
                 {
@@ -160,10 +171,14 @@ namespace NoInteraction.Core
                         {
                             return new InspectionResult("SelectionItem", display, center);
                         }
-                        if (center.HasValue)
+                        if (isStrongRole && center.HasValue)
                         {
                             Console.WriteLine($"[UiaInspector] Native invoke failed for '{display}', requesting fallback click at {center}");
                             return new InspectionResult("Fallback Click Needed", display, center);
+                        }
+                        if (isWeakRole)
+                        {
+                            Console.WriteLine($"[UiaInspector] '{display}' (role={controlType.ProgrammaticName}) matched but isn't actually invokable — skipping instead of blind-clicking.");
                         }
                     }
                 }
