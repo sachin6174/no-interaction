@@ -101,10 +101,16 @@ namespace NoInteraction.Core
             return (null, null);
         }
 
-        /// <summary>Returns full window bounds so approval buttons anywhere in the window (center modals, top dialogs, sidebars) are detected.</summary>
+        /// <summary>Real prompts in these agent chat panels consistently render bottom-right,
+        /// next to the chat's text input box — never in a menu bar or sidebar — so scanning
+        /// just that region (matching UiaInspector's PromptRegionOf) avoids OCR false-matches
+        /// on unrelated on-screen text elsewhere in the window, and is cheaper to capture/OCR
+        /// than the full window.</summary>
         private Rect ButtonStripRect(Rect bounds)
         {
-            return bounds;
+            var regionWidth = bounds.Width * 0.6;
+            var regionHeight = bounds.Height * 0.6;
+            return new Rect(bounds.Right - regionWidth, bounds.Bottom - regionHeight, regionWidth, regionHeight);
         }
 
         private Bitmap? CaptureScreenRegion(Rect rect)

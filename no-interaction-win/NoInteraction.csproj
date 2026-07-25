@@ -20,9 +20,9 @@
     <Platforms>x64</Platforms>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <Version>1.9.0</Version>
-    <AssemblyVersion>1.9.0.0</AssemblyVersion>
-    <FileVersion>1.9.0.0</FileVersion>
+    <Version>1.10.0</Version>
+    <AssemblyVersion>1.10.0.0</AssemblyVersion>
+    <FileVersion>1.10.0.0</FileVersion>
     <!-- WFAC010 assumes every WinForms-enabled project boots through the SDK-generated
          Main/ApplicationConfiguration.Initialize(), which is what actually applies
          ApplicationHighDpiMode. This project's entry point is the WPF App class instead,
@@ -49,6 +49,15 @@
 
   <ItemGroup>
     <PackageReference Include="System.Drawing.Common" Version="8.0.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Embedded (not just ApplicationIcon) so TrayManager can load the same artwork at
+         runtime to build the tray icon — works from a single-file publish, where app.ico
+         isn't present on disk as a loose file. -->
+    <EmbeddedResource Include="app.ico">
+      <LogicalName>NoInteraction.app.ico</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 

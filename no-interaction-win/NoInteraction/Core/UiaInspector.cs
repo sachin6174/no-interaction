@@ -46,23 +46,59 @@ namespace NoInteraction.Core
             // Pass 1: auto-tick matching checkboxes across windows
             if (checkboxKeywords.Count > 0)
             {
-                foreach (var win in windows) TickCheckboxes(win, 0, checkboxKeywords);
+                foreach (var win in windows) TickCheckboxes(win, 0, checkboxKeywords, PromptRegionOf(win));
             }
 
             // Pass 2: find & press the first matching approval button
             var allKeywords = buttonKeywords.Concat(checkboxKeywords).ToList();
             foreach (var win in windows)
             {
-                var hasSelection = IsAnyRadioSelected(win, 0, allKeywords);
-                var result = FindAndPressButton(win, 0, buttonKeywords, hasSelection);
+                var region = PromptRegionOf(win);
+                var hasSelection = IsAnyRadioSelected(win, 0, allKeywords, region);
+                var result = FindAndPressButton(win, 0, buttonKeywords, hasSelection, region);
                 if (result != null) return result;
             }
             return null;
         }
 
+        /// <summary>
+        /// Real approval/confirmation prompts in these target apps (Antigravity/Cursor/
+        /// VS Code-style agent chat panels) consistently show up in the bottom-right of the
+        /// window, right next to the chat's text input box — never in the menu bar, a
+        /// sidebar, or a toolbar. Scoping candidate elements to that region is what actually
+        /// stops matches on unrelated real buttons elsewhere in the app (a menu's "Run", a
+        /// toolbar's "Open", ...) without having to blocklist every possible false positive
+        /// by keyword. Deliberately generous (60% of width/height) to tolerate different
+        /// panel sizes/dock widths rather than requiring an exact corner.
+        /// </summary>
+        private Rect? PromptRegionOf(AutomationElement window)
+        {
+            try
+            {
+                var bounds = window.Current.BoundingRectangle;
+                if (bounds.IsEmpty || bounds.Width <= 0 || bounds.Height <= 0) return null;
+                var regionWidth = bounds.Width * 0.6;
+                var regionHeight = bounds.Height * 0.6;
+                return new Rect(bounds.Right - regionWidth, bounds.Bottom - regionHeight, regionWidth, regionHeight);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private bool IsInPromptRegion(Point? point, Rect? region)
+        {
+            // No region computed (e.g. couldn't read window bounds) — fail open rather than
+            // silently going blind to every prompt in that window.
+            if (region == null) return true;
+            if (point == null) return false;
+            return region.Value.Contains(point.Value);
+        }
+
         // MARK: Pass 1 — Checkbox ticking
 
-        private void TickCheckboxes(AutomationElement element, int depth, List<string> keywords)
+        private void TickCheckboxes(AutomationElement element, int depth, List<string> keywords, Rect? region)
         {
             if (depth > 25) return;
             if (!TryGetControlType(element, out var controlType)) return;
@@ -71,7 +107,7 @@ namespace NoInteraction.Core
             if (controlType == ControlType.CheckBox || controlType == ControlType.RadioButton)
             {
                 var label = ElementLabel(element);
-                if (keywords.Any(k => KeywordMatcher.Matches(label, k)))
+                if (keywords.Any(k => KeywordMatcher.Matches(label, k)) && IsInPromptRegion(CenterOf(element), region))
                 {
                     if (TryToggleOn(element))
                     {
@@ -82,7 +118,7 @@ namespace NoInteraction.Core
 
             foreach (var child in Children(element))
             {
-                TickCheckboxes(child, depth + 1, keywords);
+                TickCheckboxes(child, depth + 1, keywords, region);
             }
         }
 
@@ -119,7 +155,7 @@ namespace NoInteraction.Core
 
         // MARK: Pass 2 — Button pressing
 
-        private InspectionResult? FindAndPressButton(AutomationElement element, int depth, List<string> keywords, bool hasSelection)
+        private InspectionResult? FindAndPressButton(AutomationElement element, int depth, List<string> keywords, bool hasSelection, Rect? region)
         {
             if (depth > 25) return null;
             if (!TryGetControlType(element, out var controlType)) return null;
@@ -168,10 +204,15 @@ namespace NoInteraction.Core
                                   : string.Equals(label.Trim(), k.Trim(), StringComparison.OrdinalIgnoreCase)))
                         : null;
 
-                    if (matchedKeyword != null)
+                    var center = matchedKeyword != null ? CenterOf(element) : null;
+
+                    // Real approval buttons live bottom-right by the chat input; a text match
+                    // anywhere else (menu bar, sidebar, toolbar) is almost certainly an
+                    // unrelated button that just happens to share the same word — don't even
+                    // attempt invoke on it, just keep walking its children.
+                    if (matchedKeyword != null && IsInPromptRegion(center, region))
                     {
                         var display = string.IsNullOrEmpty(label) ? "Approval Button" : label;
-                        var center = CenterOf(element);
 
                         if (TryInvoke(element))
                         {
@@ -205,13 +246,13 @@ namespace NoInteraction.Core
 
             foreach (var child in Children(element))
             {
-                var r = FindAndPressButton(child, depth + 1, keywords, hasSelection);
+                var r = FindAndPressButton(child, depth + 1, keywords, hasSelection, region);
                 if (r != null) return r;
             }
             return null;
         }
 
-        private bool IsAnyRadioSelected(AutomationElement element, int depth, List<string> keywords)
+        private bool IsAnyRadioSelected(AutomationElement element, int depth, List<string> keywords, Rect? region)
         {
             if (depth > 25) return false;
             if (!TryGetControlType(element, out var controlType)) return false;
@@ -220,7 +261,7 @@ namespace NoInteraction.Core
             if (controlType == ControlType.RadioButton || controlType == ControlType.CheckBox)
             {
                 var label = ElementLabel(element);
-                if (!string.IsNullOrEmpty(label) && keywords.Any(k => KeywordMatcher.Matches(label, k)))
+                if (!string.IsNullOrEmpty(label) && keywords.Any(k => KeywordMatcher.Matches(label, k)) && IsInPromptRegion(CenterOf(element), region))
                 {
                     if (IsSelectedOrChecked(element)) return true;
                 }
@@ -228,7 +269,7 @@ namespace NoInteraction.Core
 
             foreach (var child in Children(element))
             {
-                if (IsAnyRadioSelected(child, depth + 1, keywords)) return true;
+                if (IsAnyRadioSelected(child, depth + 1, keywords, region)) return true;
             }
             return false;
         }

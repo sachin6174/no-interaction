@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 using NoInteraction.Core;
 
@@ -77,29 +78,96 @@ namespace NoInteraction.UI
             _icon.ContextMenuStrip = BuildMenu();
         }
 
+        /// <summary>Loads the same artwork used for the exe/taskbar icon (embedded from
+        /// app.ico — the macOS app's icon, converted) instead of drawing a separate,
+        /// mismatched shape here, so the tray icon and the rest of the app's icon look
+        /// like the same app.
+        ///
+        /// Deliberately does NOT use System.Drawing.Icon(stream, w, h): GDI+'s icon frame
+        /// picker/decoder is unreliable for PNG-compressed ICO entries at non-256 sizes (it
+        /// produced solid noise here, not a decode error, so it fails silently) — every
+        /// frame in app.ico is PNG-compressed. Parsing the ICO directory ourselves and
+        /// decoding the chosen frame's PNG bytes directly sidesteps that entirely.</summary>
+        private Bitmap LoadBaseIconBitmap(int size)
+        {
+            var asm = System.Reflection.Assembly.GetExecutingAssembly();
+            using var stream = asm.GetManifestResourceStream("NoInteraction.app.ico")
+                ?? throw new InvalidOperationException("Embedded app.ico resource not found.");
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+            var icoBytes = ms.ToArray();
+
+            var pngBytes = ExtractClosestIcoFramePng(icoBytes, size)
+                ?? throw new InvalidOperationException("No usable frame found in app.ico.");
+
+            using var pngStream = new MemoryStream(pngBytes);
+            var decoded = new Bitmap(pngStream);
+            if (decoded.Width == size && decoded.Height == size) return decoded;
+
+            using (decoded)
+            {
+                return new Bitmap(decoded, size, size);
+            }
+        }
+
+        /// <summary>Reads the ICONDIR/ICONDIRENTRY table and returns the raw PNG bytes of
+        /// whichever frame's declared size is closest to <paramref name="targetSize"/>.</summary>
+        private static byte[]? ExtractClosestIcoFramePng(byte[] icoBytes, int targetSize)
+        {
+            if (icoBytes.Length < 6) return null;
+            int count = BitConverter.ToUInt16(icoBytes, 4);
+
+            byte[]? best = null;
+            int bestDiff = int.MaxValue;
+            for (int i = 0; i < count; i++)
+            {
+                int entryOffset = 6 + i * 16;
+                if (entryOffset + 16 > icoBytes.Length) break;
+
+                int w = icoBytes[entryOffset]; if (w == 0) w = 256;
+                int dataSize = BitConverter.ToInt32(icoBytes, entryOffset + 8);
+                int dataOffset = BitConverter.ToInt32(icoBytes, entryOffset + 12);
+                if (dataOffset < 0 || dataSize <= 0 || dataOffset + dataSize > icoBytes.Length) continue;
+
+                int diff = Math.Abs(w - targetSize);
+                if (diff < bestDiff)
+                {
+                    bestDiff = diff;
+                    best = new byte[dataSize];
+                    Array.Copy(icoBytes, dataOffset, best, 0, dataSize);
+                }
+            }
+            return best;
+        }
+
+        /// <summary>Desaturates the icon for the "paused" tray state — keeps the same
+        /// artwork instead of swapping to an unrelated color/shape, so it's still instantly
+        /// recognizable as NoInteraction while clearly reading as inactive.</summary>
+        private static Bitmap ToGrayscale(Bitmap source)
+        {
+            var result = new Bitmap(source.Width, source.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using var g = Graphics.FromImage(result);
+            var colorMatrix = new System.Drawing.Imaging.ColorMatrix(new float[][]
+            {
+                new float[] { 0.3f, 0.3f, 0.3f, 0, 0 },
+                new float[] { 0.59f, 0.59f, 0.59f, 0, 0 },
+                new float[] { 0.11f, 0.11f, 0.11f, 0, 0 },
+                new float[] { 0, 0, 0, 0.75f, 0 },
+                new float[] { 0, 0, 0, 0, 1 }
+            });
+            using var attributes = new System.Drawing.Imaging.ImageAttributes();
+            attributes.SetColorMatrix(colorMatrix);
+            g.DrawImage(source, new Rectangle(0, 0, source.Width, source.Height), 0, 0, source.Width, source.Height, GraphicsUnit.Pixel, attributes);
+            return result;
+        }
+
         private IntPtr CreateTrayIconHandle(bool active)
         {
-            using var bmp = new Bitmap(32, 32);
-            using (var g = Graphics.FromImage(bmp))
-            {
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                g.Clear(Color.Transparent);
+            using var baseBmp = LoadBaseIconBitmap(32);
+            if (active) return baseBmp.GetHicon();
 
-                // Draw solid rounded background (Catppuccin Mauve when active, Muted Gray when paused)
-                using var bgBrush = new SolidBrush(active ? Color.FromArgb(203, 166, 247) : Color.FromArgb(108, 112, 134));
-                g.FillEllipse(bgBrush, 2, 2, 28, 28);
-
-                // Draw inner dark symbol "N"
-                using var font = new Font("Segoe UI", 16, FontStyle.Bold, GraphicsUnit.Pixel);
-                using var textBrush = new SolidBrush(Color.FromArgb(30, 30, 46));
-                var format = new StringFormat
-                {
-                    Alignment = StringAlignment.Center,
-                    LineAlignment = StringAlignment.Center
-                };
-                g.DrawString("N", font, textBrush, new RectangleF(0, 0, 32, 32), format);
-            }
-            return bmp.GetHicon();
+            using var grayBmp = ToGrayscale(baseBmp);
+            return grayBmp.GetHicon();
         }
 
         private ContextMenuStrip BuildMenu()
