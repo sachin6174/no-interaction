@@ -176,7 +176,7 @@
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="NoInteraction" FontSize="18" FontWeight="Bold" Foreground="#cba6f7" VerticalAlignment="Center"/>
                         <Border Background="#45475a" CornerRadius="4" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="v1.4" FontSize="9" FontWeight="Bold" Foreground="#bac2de"/>
+                            <TextBlock x:Name="VersionBadge" Text="v0.0" FontSize="9" FontWeight="Bold" Foreground="#bac2de"/>
                         </Border>
                     </StackPanel>
                     <TextBlock x:Name="StatusText" Text="Active &amp; Monitoring Prompts" FontSize="11" Foreground="#a6adc8" Margin="0,3,0,0"/>

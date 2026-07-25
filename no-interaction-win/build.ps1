@@ -7,6 +7,8 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 
+& "$Root\bump-version.ps1" | Out-Null
+
 Write-Host "Restoring & publishing NoInteraction..." -ForegroundColor Cyan
 
 dotnet publish NoInteraction.csproj `

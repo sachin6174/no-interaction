@@ -31,6 +31,15 @@ namespace NoInteraction.UI
             _engine.PromptQueue.CollectionChanged += (_, _) => Dispatcher.Invoke(RenderPromptQueue);
             _engine.TerminalSessions.CollectionChanged += (_, _) => Dispatcher.Invoke(RefreshTerminalSessions);
 
+            // Read straight from the build's own AssemblyVersion instead of a hardcoded
+            // string, so this label can never drift out of sync with the version bump
+            // build.ps1 applies to the csproj on every build.
+            if (VersionBadge != null)
+            {
+                var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                if (v != null) VersionBadge.Text = $"v{v.Major}.{v.Minor}";
+            }
+
             RefreshHeader();
             RefreshLog();
             RenderRules(ButtonRulesList, _engine.ButtonRules, TargetType.Button);

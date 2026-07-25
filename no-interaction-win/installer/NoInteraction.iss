@@ -8,7 +8,7 @@
 ; or just run .\build-installer.ps1, which does both steps.
 
 #define MyAppName "NoInteraction"
-#define MyAppVersion "1.4.0"
+#define MyAppVersion "1.7.0"
 #define MyAppPublisher "NoInteraction"
 #define MyAppExeName "NoInteraction.exe"
 #define MyAppMutex "NoInteraction_SingleInstance_Mutex"
@@ -33,6 +33,14 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+; AppVersion alone only sets the installer's ProductVersion resource field — FileVersion
+; needs its own directive or it's left blank, so Explorer's Properties > Details tab
+; wouldn't show a version for the installer itself.
+VersionInfoVersion={#MyAppVersion}.0
+VersionInfoProductVersion={#MyAppVersion}.0
+VersionInfoDescription={#MyAppName} Setup
+VersionInfoProductTextVersion={#MyAppVersion}
+VersionInfoCompany={#MyAppPublisher}
 ; Matches the mutex NoInteraction itself holds while running (App.xaml.cs), so Setup
 ; can detect a running instance and prompt to close it instead of failing mid-copy.
 AppMutex={#MyAppMutex}
