@@ -101,15 +101,15 @@ namespace NoInteraction.Core
             return (null, null);
         }
 
-        /// <summary>Real prompts in these agent chat panels consistently render bottom-right,
-        /// next to the chat's text input box — never in a menu bar or sidebar — so scanning
-        /// just that region (matching UiaInspector's PromptRegionOf) avoids OCR false-matches
-        /// on unrelated on-screen text elsewhere in the window, and is cheaper to capture/OCR
-        /// than the full window.</summary>
+        /// <summary>Real prompts in these agent chat panels render somewhere in the right-side
+        /// chat panel — not necessarily pinned to the bottom edge, since it's a scrolling
+        /// conversation — but never in the menu bar or a left-hand sidebar. Matches
+        /// UiaInspector's PromptRegionOf so both detection paths agree on where a prompt can
+        /// legitimately be, and it's cheaper to capture/OCR than the full window.</summary>
         private Rect ButtonStripRect(Rect bounds)
         {
-            var regionWidth = bounds.Width * 0.6;
-            var regionHeight = bounds.Height * 0.6;
+            var regionWidth = bounds.Width * 0.55;
+            var regionHeight = bounds.Height * 0.8;
             return new Rect(bounds.Right - regionWidth, bounds.Bottom - regionHeight, regionWidth, regionHeight);
         }
 

@@ -63,13 +63,14 @@ namespace NoInteraction.Core
 
         /// <summary>
         /// Real approval/confirmation prompts in these target apps (Antigravity/Cursor/
-        /// VS Code-style agent chat panels) consistently show up in the bottom-right of the
-        /// window, right next to the chat's text input box — never in the menu bar, a
-        /// sidebar, or a toolbar. Scoping candidate elements to that region is what actually
-        /// stops matches on unrelated real buttons elsewhere in the app (a menu's "Run", a
-        /// toolbar's "Open", ...) without having to blocklist every possible false positive
-        /// by keyword. Deliberately generous (60% of width/height) to tolerate different
-        /// panel sizes/dock widths rather than requiring an exact corner.
+        /// VS Code-style agent chat panels) show up somewhere in the chat panel docked on
+        /// the right side of the window — not necessarily pinned to the very bottom edge,
+        /// since it's a scrolling conversation (a permission prompt can sit mid-panel above
+        /// later messages, not just right next to the input box). What it's never in is the
+        /// menu bar, a toolbar, or a left-hand sidebar — those are reliably anchored to the
+        /// top and left respectively, so excluding just the top ~20% and left ~45% of the
+        /// window filters out that whole class of false positive (a menu's "Run", a
+        /// toolbar's "Open", ...) without needing to require the exact bottom corner.
         /// </summary>
         private Rect? PromptRegionOf(AutomationElement window)
         {
@@ -77,8 +78,8 @@ namespace NoInteraction.Core
             {
                 var bounds = window.Current.BoundingRectangle;
                 if (bounds.IsEmpty || bounds.Width <= 0 || bounds.Height <= 0) return null;
-                var regionWidth = bounds.Width * 0.6;
-                var regionHeight = bounds.Height * 0.6;
+                var regionWidth = bounds.Width * 0.55;
+                var regionHeight = bounds.Height * 0.8;
                 return new Rect(bounds.Right - regionWidth, bounds.Bottom - regionHeight, regionWidth, regionHeight);
             }
             catch
