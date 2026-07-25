@@ -131,7 +131,7 @@ Your objective is to optimize this application to the absolute highest tier of s
 
         private readonly System.Threading.Timer _timer;
         private DateTime _lastActionTime = DateTime.MinValue;
-        private readonly TimeSpan _cooldown = TimeSpan.FromSeconds(1.2);
+        private readonly TimeSpan _cooldown = TimeSpan.FromSeconds(1.0);
         private volatile bool _ocrScanInFlight;
         private readonly object _scanLock = new();
 
@@ -179,7 +179,10 @@ Your objective is to optimize this application to the absolute highest tier of s
             SaveRules();
             SavePromptQueue();
 
-            _timer = new System.Threading.Timer(_ => ScheduleScan(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3));
+            // Fixed 1-second cadence so a prompt gets clicked within ~1s of appearing,
+            // whether or not a target app was already active on the previous tick — no
+            // more slow "idle" polling interval that delayed the very first detection.
+            _timer = new System.Threading.Timer(_ => ScheduleScan(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         }
 
         private void SaveRules()
@@ -211,15 +214,7 @@ Your objective is to optimize this application to the absolute highest tier of s
             if (DateTime.Now - _lastActionTime < _cooldown) return;
 
             var targetApps = AppObserver.Shared.FindTargetApplications();
-            if (targetApps.Count == 0)
-            {
-                // Slow down scan frequency when no target applications are running
-                _timer.Change(TimeSpan.FromSeconds(3.5), TimeSpan.FromSeconds(3.5));
-                return;
-            }
-
-            // Speed up scan frequency (1s) when target applications are active
-            _timer.Change(TimeSpan.FromSeconds(1.0), TimeSpan.FromSeconds(1.0));
+            if (targetApps.Count == 0) return;
 
             List<string> buttons = new();
             List<string> checkboxes = new();
