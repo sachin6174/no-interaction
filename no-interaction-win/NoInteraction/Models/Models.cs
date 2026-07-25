@@ -40,6 +40,14 @@ namespace NoInteraction.Models
         public string FormattedTime => Timestamp.ToString("h:mm:ss tt");
     }
 
+    public sealed class TerminalSession
+    {
+        public int ProcessId { get; set; }
+        public string Title { get; set; } = "";
+        public string ProcessName { get; set; } = "Windows Terminal";
+        public bool IsAttached { get; set; } = true;
+    }
+
     /// <summary>
     /// Case-insensitive keyword matching with a word-boundary regex fallback, mirroring
     /// the Mac KeywordMatcher so rule behavior is identical across platforms.

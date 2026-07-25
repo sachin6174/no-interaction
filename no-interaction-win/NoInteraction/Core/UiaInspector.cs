@@ -125,36 +125,46 @@ namespace NoInteraction.Core
             if (!TryGetControlType(element, out var controlType)) return null;
             if (IsIgnoredElement(element, controlType)) return null;
 
-            if (controlType == ControlType.Button || 
+            bool isCandidateRole = 
+                controlType == ControlType.Button || 
                 controlType == ControlType.SplitButton || 
                 controlType == ControlType.RadioButton || 
                 controlType == ControlType.Custom || 
                 controlType == ControlType.Hyperlink || 
-                controlType == ControlType.MenuItem)
+                controlType == ControlType.MenuItem ||
+                controlType == ControlType.Group ||
+                controlType == ControlType.Pane ||
+                controlType == ControlType.Text ||
+                controlType == ControlType.Document ||
+                controlType == ControlType.ListItem ||
+                controlType == ControlType.Image;
+
+            if (isCandidateRole)
             {
-                if (controlType == ControlType.RadioButton && hasSelection) return null;
-
-                var label = ElementLabel(element);
-                var isMatch = !string.IsNullOrEmpty(label) && keywords.Any(k => KeywordMatcher.Matches(label, k));
-
-                if (isMatch)
+                if (!(controlType == ControlType.RadioButton && hasSelection))
                 {
-                    var display = string.IsNullOrEmpty(label) ? "Approval Button" : label;
-                    var center = CenterOf(element);
+                    var label = ElementLabel(element);
+                    bool isMatch = !string.IsNullOrEmpty(label) && label.Length <= 60 && keywords.Any(k => KeywordMatcher.Matches(label, k));
 
-                    if (TryInvoke(element))
+                    if (isMatch)
                     {
-                        Console.WriteLine($"[UiaInspector] Invoke succeeded on '{display}' (role={controlType.ProgrammaticName}, depth={depth})");
-                        return new InspectionResult("Invoke", display, center);
-                    }
-                    if (controlType == ControlType.RadioButton && TrySelect(element))
-                    {
-                        return new InspectionResult("SelectionItem", display, center);
-                    }
-                    if (center.HasValue)
-                    {
-                        Console.WriteLine($"[UiaInspector] Invoke failed for '{display}', requesting fallback click at {center}");
-                        return new InspectionResult("Fallback Click Needed", display, center);
+                        var display = string.IsNullOrEmpty(label) ? "Approval Button" : label;
+                        var center = CenterOf(element);
+
+                        if (TryInvoke(element))
+                        {
+                            Console.WriteLine($"[UiaInspector] Invoke/LegacyAction succeeded on '{display}' (role={controlType.ProgrammaticName}, depth={depth})");
+                            return new InspectionResult("Invoke", display, center);
+                        }
+                        if (controlType == ControlType.RadioButton && TrySelect(element))
+                        {
+                            return new InspectionResult("SelectionItem", display, center);
+                        }
+                        if (center.HasValue)
+                        {
+                            Console.WriteLine($"[UiaInspector] Native invoke failed for '{display}', requesting fallback click at {center}");
+                            return new InspectionResult("Fallback Click Needed", display, center);
+                        }
                     }
                 }
             }
@@ -199,10 +209,28 @@ namespace NoInteraction.Core
                     return true;
                 }
             }
-            catch
+            catch { }
+
+            try
             {
-                // Falls through to selection/fallback-click handling below.
+                if (element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var selObj))
+                {
+                    ((SelectionItemPattern)selObj).Select();
+                    return true;
+                }
             }
+            catch { }
+
+            try
+            {
+                if (element.TryGetCurrentPattern(TogglePattern.Pattern, out var togObj))
+                {
+                    ((TogglePattern)togObj).Toggle();
+                    return true;
+                }
+            }
+            catch { }
+
             return false;
         }
 
@@ -266,32 +294,52 @@ namespace NoInteraction.Core
             }
         }
 
-        /// <summary>Reads the element's Name, falling back to child Text nodes (needed for
+        /// <summary>Reads direct element label, falling back to recursive child text nodes (needed for
         /// Electron/Chromium web content buttons whose accessible name lives on a child).</summary>
         private string ElementLabel(AutomationElement element)
         {
-            string text;
-            try { text = element.Current.Name?.Trim() ?? ""; }
+            string text = "";
+            try
+            {
+                var cur = element.Current;
+                text = cur.Name?.Trim() ?? "";
+                if (string.IsNullOrEmpty(text)) text = cur.HelpText?.Trim() ?? "";
+            }
             catch { text = ""; }
 
             if (string.IsNullOrEmpty(text))
             {
-                foreach (var child in Children(element))
-                {
-                    if (!TryGetControlType(child, out var ct)) continue;
-                    if (ct == ControlType.Text)
-                    {
-                        string childText;
-                        try { childText = child.Current.Name?.Trim() ?? ""; }
-                        catch { childText = ""; }
-                        if (!string.IsNullOrEmpty(childText))
-                        {
-                            text = text.Length == 0 ? childText : text + " " + childText;
-                        }
-                    }
-                }
+                text = RecursiveChildText(element, 0);
             }
             return text.Trim();
+        }
+
+        private string RecursiveChildText(AutomationElement element, int depth)
+        {
+            if (depth > 3) return "";
+            List<string> parts = new();
+            foreach (var child in Children(element))
+            {
+                string childText = "";
+                try
+                {
+                    var c = child.Current;
+                    childText = c.Name?.Trim() ?? "";
+                    if (string.IsNullOrEmpty(childText)) childText = c.HelpText?.Trim() ?? "";
+                }
+                catch { }
+
+                if (!string.IsNullOrEmpty(childText))
+                {
+                    parts.Add(childText);
+                }
+                else
+                {
+                    var deep = RecursiveChildText(child, depth + 1);
+                    if (!string.IsNullOrEmpty(deep)) parts.Add(deep);
+                }
+            }
+            return string.Join(" ", parts);
         }
 
         private List<AutomationElement> Children(AutomationElement element)
@@ -324,3 +372,4 @@ namespace NoInteraction.Core
         }
     }
 }
+

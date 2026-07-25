@@ -94,11 +94,10 @@ namespace NoInteraction.Core
             return (null, null);
         }
 
-        /// <summary>Returns only the bottom ~30% of the window — where approval buttons live.</summary>
+        /// <summary>Returns full window bounds so approval buttons anywhere in the window (center modals, top dialogs, sidebars) are detected.</summary>
         private Rect ButtonStripRect(Rect bounds)
         {
-            var stripH = Math.Max(80, bounds.Height * 0.30);
-            return new Rect(bounds.X, bounds.Bottom - stripH, bounds.Width, stripH);
+            return bounds;
         }
 
         private Bitmap? CaptureScreenRegion(Rect rect)

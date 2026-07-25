@@ -120,23 +120,57 @@ namespace NoInteraction.UI
             return menu;
         }
 
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool AllowSetForegroundWindow(int dwProcessId);
+
+        private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_SHOWWINDOW = 0x0040;
+        private const int SW_RESTORE = 9;
+        private const int ASFW_ANY = -1;
+
         public void ShowDashboard()
         {
-            if (_dashboard == null || !_dashboard.IsLoaded)
+            try
             {
-                _dashboard = new DashboardWindow();
-                _dashboard.Closed += (_, _) => _dashboard = null;
-            }
+                AllowSetForegroundWindow(ASFW_ANY);
 
-            if (_dashboard.WindowState == System.Windows.WindowState.Minimized)
-            {
+                if (_dashboard == null || !_dashboard.IsLoaded)
+                {
+                    _dashboard = new DashboardWindow();
+                    _dashboard.Closed += (_, _) => _dashboard = null;
+                }
+
+                _dashboard.Show();
                 _dashboard.WindowState = System.Windows.WindowState.Normal;
-            }
 
-            _dashboard.Show();
-            _dashboard.Activate();
-            _dashboard.Topmost = true;
-            _dashboard.Topmost = false;
+                var helper = new System.Windows.Interop.WindowInteropHelper(_dashboard);
+                if (helper.Handle != IntPtr.Zero)
+                {
+                    SetWindowPos(helper.Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                    ShowWindow(helper.Handle, SW_RESTORE);
+                    SetForegroundWindow(helper.Handle);
+                    SetWindowPos(helper.Handle, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                }
+
+                _dashboard.Activate();
+                _dashboard.Focus();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[TrayManager] Error showing dashboard: {ex}");
+            }
         }
 
         public void Dispose()

@@ -18,3 +18,7 @@ dotnet publish NoInteraction.csproj `
   -o dist
 
 Write-Host "Build complete: dist\NoInteraction.exe" -ForegroundColor Green
+
+Write-Host "Code-signing dist\NoInteraction.exe..." -ForegroundColor Cyan
+& "$Root\sign.ps1" -ExePath "$Root\dist\NoInteraction.exe"
+

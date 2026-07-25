@@ -18,6 +18,13 @@ namespace NoInteraction.Core
         public List<ApprovalRule> ButtonRules { get; set; } = new();
         public List<ApprovalRule> CheckboxRules { get; set; } = new();
 
+        public List<string> PromptQueue { get; set; } = new();
+        public int CurrentPromptIndex { get; set; } = 0;
+        public bool IsPromptQueueActive { get; set; } = true;
+        public bool LoopModeEnabled { get; set; } = false;
+        public int LoopModeLimit { get; set; } = 10;
+        public int LoopModeCounter { get; set; } = 0;
+
         private static readonly string DirPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NoInteraction");
         private static readonly string FilePath = Path.Combine(DirPath, "settings.json");

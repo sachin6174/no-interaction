@@ -54,14 +54,70 @@ namespace NoInteraction.Core
         public ObservableCollection<ApprovalRule> ButtonRules { get; } = new();
         public ObservableCollection<ApprovalRule> CheckboxRules { get; } = new();
 
+        public static readonly string DefaultPrompt = @"Perform a complete, exhaustive, and uncompromising security, architecture, performance, and UI/UX audit of this entire codebase. Analyze every single line of code with extreme depth and rigor.
+
+Your objective is to optimize this application to the absolute highest tier of software quality in existence. Follow these strict directives:
+1. BUG DETECTION & RESOLUTION: Scan for any logical bugs, concurrency race conditions, memory leaks, performance bottlenecks, edge-case crashes, and API misuses. Resolve them immediately with clean, production-ready, and robust code.
+2. CODE OPTIMIZATION & REFACTORING: Optimize compile times, memory footprints, and CPU utilization. Eliminate redundant loops and heavy UI renderings. Ensure optimal concurrency paradigms.
+3. UI/UX REFINEMENT: Review all layouts, fonts, spacing, color contrasts, transitions, and hover animations. Upgrade the visual design system to feel premium, modern, and state-of-the-art.
+4. EDGE CASES & ROBUSTNESS: Ensure perfect error handling, validation, and defensive coding against unexpected window hierarchies or missing permissions.
+5. DEEP SEARCH: Use the internet, latest documentation, SDK guidelines, and the full extent of your cognitive capacity. Do not stop until this codebase is completely flawless.";
+
+        public ObservableCollection<string> PromptQueue { get; } = new();
+
+        private int _currentPromptIndex;
+        public int CurrentPromptIndex
+        {
+            get => _currentPromptIndex;
+            set { if (_currentPromptIndex == value) return; _currentPromptIndex = value; _settings.CurrentPromptIndex = value; _settings.Save(); Raise(); }
+        }
+
+        private bool _isPromptQueueActive = true;
+        public bool IsPromptQueueActive
+        {
+            get => _isPromptQueueActive;
+            set { if (_isPromptQueueActive == value) return; _isPromptQueueActive = value; _settings.IsPromptQueueActive = value; _settings.Save(); Raise(); }
+        }
+
+        private bool _loopModeEnabled;
+        public bool LoopModeEnabled
+        {
+            get => _loopModeEnabled;
+            set { if (_loopModeEnabled == value) return; _loopModeEnabled = value; _settings.LoopModeEnabled = value; _settings.Save(); Raise(); }
+        }
+
+        private int _loopModeLimit = 10;
+        public int LoopModeLimit
+        {
+            get => _loopModeLimit;
+            set { if (_loopModeLimit == value) return; _loopModeLimit = value; _settings.LoopModeLimit = value; _settings.Save(); Raise(); }
+        }
+
+        private int _loopModeCounter;
+        public int LoopModeCounter
+        {
+            get => _loopModeCounter;
+            set { if (_loopModeCounter == value) return; _loopModeCounter = value; _settings.LoopModeCounter = value; _settings.Save(); Raise(); }
+        }
+
+        private bool _terminalMonitoringEnabled = true;
+        public bool TerminalMonitoringEnabled
+        {
+            get => _terminalMonitoringEnabled;
+            set { if (_terminalMonitoringEnabled == value) return; _terminalMonitoringEnabled = value; Raise(); }
+        }
+
+        public ObservableCollection<TerminalSession> TerminalSessions { get; } = new();
+
         private static readonly string[] DefaultButtons =
         {
             "Submit", "Allow", "Always Allow", "Allow All", "Yes, allow", "Yes, and always", "Approve",
-            "Yes", "Confirm", "Proceed", "Accept", "Continue", "OK", "Trust", "Got it", "Install", "Open"
+            "Yes", "Confirm", "Proceed", "Accept", "Continue", "OK", "Trust", "Got it", "Install", "Open",
+            "Run Command", "Run", "Execute", "Always Allow Command", "Always Run", "Run Tool", "Allow Tool"
         };
         private static readonly string[] DefaultCheckboxes =
         {
-            "Remember", "Always", "Trust", "Don't ask", "Don't show"
+            "Remember", "Always", "Trust", "Don't ask", "Don't show", "Remember my choice", "Do not ask again"
         };
 
         private readonly System.Threading.Timer _timer;
@@ -81,8 +137,6 @@ namespace NoInteraction.Core
             var buttons = _settings.ButtonRules.Count > 0
                 ? _settings.ButtonRules
                 : DefaultButtons.Select(k => new ApprovalRule(k, TargetType.Button)).ToList();
-            buttons.RemoveAll(r => string.Equals(r.Keyword, "Run", StringComparison.OrdinalIgnoreCase)
-                                 || string.Equals(r.Keyword, "Execute", StringComparison.OrdinalIgnoreCase));
             foreach (var r in buttons) ButtonRules.Add(r);
 
             var checkboxes = _settings.CheckboxRules.Count > 0
@@ -90,8 +144,23 @@ namespace NoInteraction.Core
                 : DefaultCheckboxes.Select(k => new ApprovalRule(k, TargetType.Checkbox)).ToList();
             foreach (var r in checkboxes) CheckboxRules.Add(r);
 
+            if (_settings.PromptQueue.Count > 0)
+            {
+                foreach (var pq in _settings.PromptQueue) PromptQueue.Add(pq);
+            }
+            else
+            {
+                PromptQueue.Add(DefaultPrompt);
+            }
+            _currentPromptIndex = _settings.CurrentPromptIndex;
+            _isPromptQueueActive = _settings.IsPromptQueueActive;
+            _loopModeEnabled = _settings.LoopModeEnabled;
+            _loopModeLimit = _settings.LoopModeLimit;
+            _loopModeCounter = _settings.LoopModeCounter;
+
             ButtonRules.CollectionChanged += (_, _) => SaveRules();
             CheckboxRules.CollectionChanged += (_, _) => SaveRules();
+            PromptQueue.CollectionChanged += (_, _) => SavePromptQueue();
 
             _timer = new System.Threading.Timer(_ => ScheduleScan(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3));
         }
@@ -101,6 +170,20 @@ namespace NoInteraction.Core
             _settings.ButtonRules = ButtonRules.ToList();
             _settings.CheckboxRules = CheckboxRules.ToList();
             _settings.Save();
+        }
+
+        public void SavePromptQueue()
+        {
+            _settings.PromptQueue = PromptQueue.ToList();
+            _settings.Save();
+        }
+
+        public void ResetPromptQueueToDefault()
+        {
+            PromptQueue.Clear();
+            PromptQueue.Add(DefaultPrompt);
+            CurrentPromptIndex = 0;
+            IsPromptQueueActive = true;
         }
 
         // MARK: Scan loop

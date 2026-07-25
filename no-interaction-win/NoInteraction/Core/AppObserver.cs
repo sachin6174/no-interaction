@@ -20,12 +20,22 @@ namespace NoInteraction.Core
             "Visual Studio Code",
             "VS Code",
             "VSCode",
-            "Code"
+            "Code",
+            "Cursor",
+            "Windsurf",
+            "Chrome",
+            "msedge",
+            "Edge",
+            "Brave",
+            "Firefox",
+            "Opera",
+            "Vivaldi",
+            "Arc"
         };
 
         private static readonly string[] EditorNames =
         {
-            "visual studio code", "vs code", "vscode", "cursor", "windsurf", "antigravity", "code.exe"
+            "visual studio code", "vs code", "vscode", "cursor", "windsurf", "antigravity", "code"
         };
 
         private static readonly string[] BrowserProcessNames =
@@ -49,7 +59,7 @@ namespace NoInteraction.Core
 
         public bool IsBrowserOrEditor(Process app) => IsBrowser(app) || IsEditor(app);
 
-        /// <summary>Checks whether a top-level window's title contains any Antigravity keyword.</summary>
+        /// <summary>Checks whether a top-level window's title contains any Antigravity or target keyword.</summary>
         public bool IsAntigravityWindow(AutomationElement window)
         {
             string title;
@@ -57,7 +67,7 @@ namespace NoInteraction.Core
             catch { return false; }
 
             var lower = title.ToLowerInvariant();
-            string[] keywords = { "antigravity", "anti-gravity", "agy", "gemini", "no-interaction" };
+            string[] keywords = { "antigravity", "anti-gravity", "agy", "gemini", "no-interaction", "chat", "code" };
             return keywords.Any(lower.Contains);
         }
 
@@ -69,22 +79,32 @@ namespace NoInteraction.Core
                                             .ToList();
 
             var results = new List<Process>();
+            var seenPids = new HashSet<int>();
+
             foreach (var proc in Process.GetProcesses())
             {
                 try
                 {
-                    if (proc.MainWindowHandle == IntPtr.Zero) continue;
-                    var title = proc.MainWindowTitle ?? "";
+                    if (seenPids.Contains(proc.Id)) continue;
+
+                    var title = SafeMainWindowTitle(proc);
                     var procName = proc.ProcessName ?? "";
                     var haystack = title + " " + procName;
-                    if (allTargets.Any(t => haystack.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0))
+
+                    bool isMatch = allTargets.Any(t => haystack.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (!isMatch) continue;
+
+                    // Ensure the process has top-level windows before considering it active
+                    var windows = GetTopLevelWindows(proc);
+                    if (windows.Count > 0)
                     {
                         results.Add(proc);
+                        seenPids.Add(proc.Id);
                     }
                 }
                 catch
                 {
-                    // Process may have exited or be inaccessible mid-enumeration; skip it.
+                    // Process may have exited or be inaccessible; skip it.
                 }
             }
             return results;
@@ -143,3 +163,4 @@ namespace NoInteraction.Core
         }
     }
 }
+
