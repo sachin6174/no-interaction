@@ -117,6 +117,5 @@ credentials.json
 secrets.json
 sachin-person.config
 .venv_ssh/
-release/win/NoInteraction.exe
 
 
