@@ -6,7 +6,11 @@
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
-    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <!-- DPI awareness is declared in app.manifest instead of via ApplicationHighDpiMode:
+         that MSBuild property only takes effect through the WinForms-generated Main/
+         ApplicationConfiguration.Initialize() bootstrap, which this project doesn't use
+         since its entry point is the WPF App class. Here it would be a silent no-op that
+         leaves the process DPI-unaware, so the manifest is the only mechanism that works. -->
     <Nullable>enable</Nullable>
     <RootNamespace>NoInteraction</RootNamespace>
     <AssemblyName>NoInteraction</AssemblyName>
@@ -19,6 +23,14 @@
     <Version>1.4.0</Version>
     <AssemblyVersion>1.4.0.0</AssemblyVersion>
     <FileVersion>1.4.0.0</FileVersion>
+    <!-- WFAC010 assumes every WinForms-enabled project boots through the SDK-generated
+         Main/ApplicationConfiguration.Initialize(), which is what actually applies
+         ApplicationHighDpiMode. This project's entry point is the WPF App class instead,
+         so that property is inert here and the manifest is the only mechanism that works
+         (verified: obj/**/*.editorconfig shows the property never reaches a generated
+         SetHighDpiMode call). Suppressed rather than "fixed" per the warning's own advice,
+         which would silently drop DPI awareness and break click-coordinate accuracy. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
