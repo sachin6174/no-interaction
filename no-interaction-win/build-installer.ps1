@@ -1,5 +1,6 @@
 # Builds dist\NoInteractionSetup.exe: a double-clickable installer that publishes,
-# signs, and packages NoInteraction.exe via Inno Setup.
+# signs, and packages NoInteraction.exe via Inno Setup. Also publishes both artifacts
+# to ..\release\win\, versioned, mirroring release\mac and release\linux.
 # Run from PowerShell on Windows with the .NET 8 SDK and Inno Setup 6 installed:
 #   .\build-installer.ps1
 
@@ -39,3 +40,6 @@ Write-Host "Code-signing $SetupExe..." -ForegroundColor Cyan
 & "$Root\sign.ps1" -ExePath $SetupExe
 
 Write-Host "Installer ready: $SetupExe" -ForegroundColor Green
+
+Write-Host "Publishing to release\win..." -ForegroundColor Cyan
+& "$Root\publish-release.ps1"
