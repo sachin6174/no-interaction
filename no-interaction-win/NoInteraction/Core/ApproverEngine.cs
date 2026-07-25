@@ -17,7 +17,12 @@ namespace NoInteraction.Core
     /// </summary>
     public sealed class ApproverEngine : INotifyPropertyChanged, IDisposable
     {
-        public static readonly ApproverEngine Shared = new();
+        // Shared's initializer runs the constructor, which reads DefaultPrompt/DefaultButtons/
+        // DefaultCheckboxes below. C# runs static field initializers in textual declaration
+        // order, so Shared must be declared AFTER those fields — otherwise (as this was)
+        // they're still null when the constructor runs, and DefaultButtons.Select(...) throws
+        // ArgumentNullException on every fresh install (no settings.json yet to short-circuit
+        // past the null defaults). See the field's new position further down this class.
 
         public event PropertyChangedEventHandler? PropertyChanged;
         private void Raise([CallerMemberName] string? name = null) =>
@@ -120,6 +125,10 @@ Your objective is to optimize this application to the absolute highest tier of s
             "Remember", "Always", "Trust", "Don't ask", "Don't show", "Remember my choice", "Do not ask again"
         };
 
+        // Declared here (after DefaultPrompt/DefaultButtons/DefaultCheckboxes above) so those
+        // are already initialized by the time this field's own initializer runs the constructor.
+        public static readonly ApproverEngine Shared = new();
+
         private readonly System.Threading.Timer _timer;
         private DateTime _lastActionTime = DateTime.MinValue;
         private readonly TimeSpan _cooldown = TimeSpan.FromSeconds(1.2);
@@ -161,6 +170,14 @@ Your objective is to optimize this application to the absolute highest tier of s
             ButtonRules.CollectionChanged += (_, _) => SaveRules();
             CheckboxRules.CollectionChanged += (_, _) => SaveRules();
             PromptQueue.CollectionChanged += (_, _) => SavePromptQueue();
+
+            // The population loops above ran before these handlers were subscribed, so on a
+            // fresh install (defaults substituted in-memory) or a fresh queue, settings.json
+            // would otherwise stay stale/empty until some unrelated save touched the file —
+            // any other property setter would then persist that stale ButtonRules/CheckboxRules/
+            // PromptQueue snapshot straight from disk-load, clobbering what's actually active.
+            SaveRules();
+            SavePromptQueue();
 
             _timer = new System.Threading.Timer(_ => ScheduleScan(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3));
         }
