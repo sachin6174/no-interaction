@@ -50,7 +50,18 @@ namespace NoInteraction.Core
             "chrome", "msedge", "brave", "firefox", "opera", "vivaldi", "arc"
         };
 
+        private static readonly string[] TerminalProcessNames =
+        {
+            "windowsterminal", "cmd", "powershell", "pwsh", "conhost"
+        };
+
         private AppObserver() { }
+
+        public bool IsTerminal(Process app)
+        {
+            var procName = (app.ProcessName ?? "").ToLowerInvariant();
+            return TerminalProcessNames.Any(procName.Contains);
+        }
 
         public bool IsEditor(Process app)
         {

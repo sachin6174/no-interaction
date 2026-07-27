@@ -206,6 +206,20 @@ Your objective is to optimize this application to the absolute highest tier of s
             IsPromptQueueActive = true;
         }
 
+        public bool IsElevated
+        {
+            get
+            {
+                try
+                {
+                    using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+                    var principal = new System.Security.Principal.WindowsPrincipal(identity);
+                    return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+                }
+                catch { return false; }
+            }
+        }
+
         // MARK: Scan loop
 
         private void ScheduleScan()
@@ -233,6 +247,22 @@ Your objective is to optimize this application to the absolute highest tier of s
                 string appName;
                 try { appName = string.IsNullOrEmpty(app.MainWindowTitle) ? app.ProcessName : app.MainWindowTitle; }
                 catch { appName = "Target App"; }
+
+                if (AppObserver.Shared.IsTerminal(app) && TerminalMonitoringEnabled)
+                {
+                    try
+                    {
+                        var termResponse = UiaInspector.Shared.InspectTerminalForPrompts(app, buttons);
+                        if (!string.IsNullOrEmpty(termResponse))
+                        {
+                            _lastActionTime = DateTime.Now;
+                            System.Windows.Forms.SendKeys.SendWait(termResponse);
+                            Record(appName, "Terminal Prompt", "UIA Terminal");
+                            return;
+                        }
+                    }
+                    catch { }
+                }
 
                 UiaInspector.InspectionResult? result;
                 try { result = UiaInspector.Shared.InspectAndAutoApprove(app, buttons, checkboxes); }

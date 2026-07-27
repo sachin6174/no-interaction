@@ -318,16 +318,19 @@ class ApproverEngine:
             except Exception as e:
                 print(f"Clipboard callback failed: {e}")
         else:
-            import tkinter as tk
-            try:
-                r = tk.Tk()
-                r.withdraw()
-                r.clipboard_clear()
-                r.clipboard_append(prompt)
-                r.update()
-                r.destroy()
-            except Exception as e:
-                print(f"Fallback clipboard set failed: {e}")
+            # Safe system-level clipboard fallback without creating tk.Tk in non-main threads
+            copied = False
+            for cmd in [["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"], ["wl-copy"]]:
+                try:
+                    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                    p.communicate(input=prompt.encode("utf-8"))
+                    if p.returncode == 0:
+                        copied = True
+                        break
+                except Exception:
+                    continue
+            if not copied:
+                print("[ApproverEngine] Warning: Could not copy to clipboard (xclip/xsel/wl-copy missing).")
 
         time.sleep(0.15)
         print("📋 Pasting prompt...")
@@ -367,15 +370,17 @@ class ApproverEngine:
         self._notify()
 
     def _play_sound(self) -> None:
+        players = [["paplay"], ["canberra-gtk-play", "-f"], ["aplay"], ["play"]]
         for path in SOUND_CANDIDATES:
-            try:
-                subprocess.Popen(
-                    ["paplay", path],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                )
-                return
-            except Exception:
-                continue
+            for player in players:
+                try:
+                    subprocess.Popen(
+                        player + [path],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+                    return
+                except Exception:
+                    continue
 
     # MARK: Rule management
 

@@ -22,9 +22,9 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <Version>1.13.0</Version>
-    <AssemblyVersion>1.13.0.0</AssemblyVersion>
-    <FileVersion>1.13.0.0</FileVersion>
+    <Version>1.15.0</Version>
+    <AssemblyVersion>1.15.0.0</AssemblyVersion>
+    <FileVersion>1.15.0.0</FileVersion>
     <!-- WFAC010 assumes every WinForms-enabled project boots through the SDK-generated
          Main/ApplicationConfiguration.Initialize(), which is what actually applies
          ApplicationHighDpiMode. This project's entry point is the WPF App class instead,

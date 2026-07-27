@@ -446,6 +446,91 @@ namespace NoInteraction.Core
                 return null;
             }
         }
+
+        public string? InspectTerminalForPrompts(Process app, List<string> buttonKeywords)
+        {
+            var windows = AppObserver.Shared.GetTopLevelWindows(app);
+            if (windows.Count == 0) return null;
+
+            var promptRegex = new System.Text.RegularExpressions.Regex(
+                @"(?i)(are you sure you want to continue connecting|do you want to continue|proceed with installation|accept the license|apply changes|proceed|continue)\??\s*[\(\[]\s*(yes/no/\[fingerprint\]|yes/no|y/n|y/n/\[fingerprint\]|y/n/c|y/n/a)\s*[\)\]]\s*$",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            );
+
+            foreach (var win in windows)
+            {
+                var textControls = FindTextControls(win, 0);
+                foreach (var textControl in textControls)
+                {
+                    string content = "";
+                    try
+                    {
+                        if (textControl.TryGetCurrentPattern(ValuePattern.Pattern, out var valObj))
+                        {
+                            content = ((ValuePattern)valObj).Current.Value ?? "";
+                        }
+                        else if (textControl.TryGetCurrentPattern(TextPattern.Pattern, out var textObj))
+                        {
+                            content = ((TextPattern)textObj).DocumentRange.GetText(200) ?? "";
+                        }
+                        else
+                        {
+                            content = textControl.Current.Name ?? "";
+                        }
+                    }
+                    catch { continue; }
+
+                    if (string.IsNullOrWhiteSpace(content)) continue;
+
+                    var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                                       .Select(l => l.Trim())
+                                       .Where(l => !string.IsNullOrEmpty(l))
+                                       .ToList();
+                    if (lines.Count == 0) continue;
+                    var lastLine = lines.Last();
+
+                    var match = promptRegex.Match(lastLine);
+                    if (match.Success)
+                    {
+                        var question = match.Groups[1].Value;
+                        var choices = match.Groups[2].Value.ToLowerInvariant();
+                        var response = choices.Contains("yes/no") ? "yes\r\n" : "y\r\n";
+
+                        bool isSafe = new[] { "proceed", "continue", "install", "accept", "trust", "connect", "allow", "confirm", "yes/no" }
+                            .Any(kw => question.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                            buttonKeywords.Any(kw => question.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0);
+
+                        if (isSafe)
+                        {
+                            Console.WriteLine($"[UiaInspector] Terminal prompt detected: '{lastLine}' -> Responding '{response.Trim()}'");
+                            return response;
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        private List<AutomationElement> FindTextControls(AutomationElement element, int depth)
+        {
+            if (depth > 15) return new List<AutomationElement>();
+            var results = new List<AutomationElement>();
+            try
+            {
+                var type = element.Current.ControlType;
+                if (type == ControlType.Text || type == ControlType.Edit || type == ControlType.Document)
+                {
+                    results.Add(element);
+                }
+            }
+            catch { }
+
+            foreach (var child in Children(element))
+            {
+                results.AddRange(FindTextControls(child, depth + 1));
+            }
+            return results;
+        }
     }
 }
 

@@ -133,7 +133,15 @@ public final class AXInspector {
             let skipRadio = (role == "AXRadioButton" && hasSelection)
             if !skipRadio {
                 let label = buttonLabel(element)
-                let isMatch = !label.isEmpty && label.count <= 60 && keywords.contains { KeywordMatcher.matches(label: label, keyword: $0) }
+                let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+                let isMatch = !trimmedLabel.isEmpty && trimmedLabel.count <= 60 && keywords.contains { kw in
+                    let trimmedKw = kw.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmedKw.contains(" ") {
+                        return KeywordMatcher.matches(label: trimmedLabel, keyword: trimmedKw)
+                    } else {
+                        return trimmedLabel.caseInsensitiveCompare(trimmedKw) == .orderedSame
+                    }
+                }
 
                 if isMatch {
                     // Primary action: AXPress (Native accessibility action — 100% silent, 0% cursor movement)
@@ -190,7 +198,15 @@ public final class AXInspector {
 
         if role == "AXRadioButton" || role == "AXCheckBox" {
             let label = buttonLabel(element)
-            let isMatch = !label.isEmpty && keywords.contains { KeywordMatcher.matches(label: label, keyword: $0) }
+            let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isMatch = !trimmedLabel.isEmpty && keywords.contains { kw in
+                let trimmedKw = kw.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmedKw.contains(" ") {
+                    return KeywordMatcher.matches(label: trimmedLabel, keyword: trimmedKw)
+                } else {
+                    return trimmedLabel.caseInsensitiveCompare(trimmedKw) == .orderedSame
+                }
+            }
             if isMatch {
                 var val: CFTypeRef?
                 AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &val)
