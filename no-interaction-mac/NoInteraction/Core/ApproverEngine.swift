@@ -142,7 +142,9 @@ Your objective is to optimize this application to the absolute highest tier of s
         UserDefaults.standard.set(promptQueue, forKey: "promptQueue")
     }
 
-    // MARK: - Accessibility
+    @Published public var isAutomationGranted: Bool = true
+
+    // MARK: - Accessibility & Automation
 
     public func refreshAccessibilityStatus() {
         let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
@@ -159,6 +161,12 @@ Your objective is to optimize this application to the absolute highest tier of s
             Task { @MainActor in
                 self?.refreshAccessibilityStatus()
             }
+        }
+    }
+
+    public func promptAutomationPermission() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
+            NSWorkspace.shared.open(url)
         }
     }
 

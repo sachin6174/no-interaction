@@ -63,8 +63,20 @@ public final class TerminalObserver {
         var errorDict: NSDictionary?
         let result = script.executeAndReturnError(&errorDict)
         if let errorDict {
-            print("⚠️ Terminal scan AppleScript error: \(errorDict)")
+            let errNum = errorDict["NSAppleScriptErrorNumber"] as? Int ?? 0
+            if errNum == -1743 {
+                DispatchQueue.main.async {
+                    ApproverEngine.shared.isAutomationGranted = false
+                }
+            }
+            print("⚠️ Terminal scan AppleScript error (\(errNum)): \(errorDict)")
             return []
+        } else {
+            DispatchQueue.main.async {
+                if !ApproverEngine.shared.isAutomationGranted {
+                    ApproverEngine.shared.isAutomationGranted = true
+                }
+            }
         }
         guard let output = result.stringValue, !output.isEmpty else { return [] }
 

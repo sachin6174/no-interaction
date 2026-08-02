@@ -58,7 +58,14 @@ public final class VisionOCRScanner {
                 // Long matches are sidebar items, code lines, etc. — skip them.
                 guard !text.isEmpty, text.count <= 40 else { continue }
 
-                let isMatch = buttonKeywords.contains { KeywordMatcher.matches(label: text, keyword: $0) }
+                let isMatch = buttonKeywords.contains { kw in
+                    let trimmedKw = kw.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmedKw.contains(" ") {
+                        return KeywordMatcher.matches(label: text, keyword: trimmedKw)
+                    } else {
+                        return text.caseInsensitiveCompare(trimmedKw) == .orderedSame
+                    }
+                }
                 guard isMatch else { continue }
 
                 // Convert Vision normalised bbox → screen coordinates

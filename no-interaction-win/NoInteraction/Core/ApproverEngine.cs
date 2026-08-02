@@ -17,7 +17,12 @@ namespace NoInteraction.Core
     /// </summary>
     public sealed class ApproverEngine : INotifyPropertyChanged, IDisposable
     {
-        public static readonly ApproverEngine Shared = new();
+        // Shared's initializer runs the constructor, which reads DefaultPrompt/DefaultButtons/
+        // DefaultCheckboxes below. C# runs static field initializers in textual declaration
+        // order, so Shared must be declared AFTER those fields — otherwise (as this was)
+        // they're still null when the constructor runs, and DefaultButtons.Select(...) throws
+        // ArgumentNullException on every fresh install (no settings.json yet to short-circuit
+        // past the null defaults). See the field's new position further down this class.
 
         public event PropertyChangedEventHandler? PropertyChanged;
         private void Raise([CallerMemberName] string? name = null) =>
@@ -54,19 +59,79 @@ namespace NoInteraction.Core
         public ObservableCollection<ApprovalRule> ButtonRules { get; } = new();
         public ObservableCollection<ApprovalRule> CheckboxRules { get; } = new();
 
+        public static readonly string DefaultPrompt = @"Perform a complete, exhaustive, and uncompromising security, architecture, performance, and UI/UX audit of this entire codebase. Analyze every single line of code with extreme depth and rigor.
+
+Your objective is to optimize this application to the absolute highest tier of software quality in existence. Follow these strict directives:
+1. BUG DETECTION & RESOLUTION: Scan for any logical bugs, concurrency race conditions, memory leaks, performance bottlenecks, edge-case crashes, and API misuses. Resolve them immediately with clean, production-ready, and robust code.
+2. CODE OPTIMIZATION & REFACTORING: Optimize compile times, memory footprints, and CPU utilization. Eliminate redundant loops and heavy UI renderings. Ensure optimal concurrency paradigms.
+3. UI/UX REFINEMENT: Review all layouts, fonts, spacing, color contrasts, transitions, and hover animations. Upgrade the visual design system to feel premium, modern, and state-of-the-art.
+4. EDGE CASES & ROBUSTNESS: Ensure perfect error handling, validation, and defensive coding against unexpected window hierarchies or missing permissions.
+5. DEEP SEARCH: Use the internet, latest documentation, SDK guidelines, and the full extent of your cognitive capacity. Do not stop until this codebase is completely flawless.";
+
+        public ObservableCollection<string> PromptQueue { get; } = new();
+
+        private int _currentPromptIndex;
+        public int CurrentPromptIndex
+        {
+            get => _currentPromptIndex;
+            set { if (_currentPromptIndex == value) return; _currentPromptIndex = value; _settings.CurrentPromptIndex = value; _settings.Save(); Raise(); }
+        }
+
+        private bool _isPromptQueueActive = true;
+        public bool IsPromptQueueActive
+        {
+            get => _isPromptQueueActive;
+            set { if (_isPromptQueueActive == value) return; _isPromptQueueActive = value; _settings.IsPromptQueueActive = value; _settings.Save(); Raise(); }
+        }
+
+        private bool _loopModeEnabled;
+        public bool LoopModeEnabled
+        {
+            get => _loopModeEnabled;
+            set { if (_loopModeEnabled == value) return; _loopModeEnabled = value; _settings.LoopModeEnabled = value; _settings.Save(); Raise(); }
+        }
+
+        private int _loopModeLimit = 10;
+        public int LoopModeLimit
+        {
+            get => _loopModeLimit;
+            set { if (_loopModeLimit == value) return; _loopModeLimit = value; _settings.LoopModeLimit = value; _settings.Save(); Raise(); }
+        }
+
+        private int _loopModeCounter;
+        public int LoopModeCounter
+        {
+            get => _loopModeCounter;
+            set { if (_loopModeCounter == value) return; _loopModeCounter = value; _settings.LoopModeCounter = value; _settings.Save(); Raise(); }
+        }
+
+        private bool _terminalMonitoringEnabled = true;
+        public bool TerminalMonitoringEnabled
+        {
+            get => _terminalMonitoringEnabled;
+            set { if (_terminalMonitoringEnabled == value) return; _terminalMonitoringEnabled = value; Raise(); }
+        }
+
+        public ObservableCollection<TerminalSession> TerminalSessions { get; } = new();
+
         private static readonly string[] DefaultButtons =
         {
             "Submit", "Allow", "Always Allow", "Allow All", "Yes, allow", "Yes, and always", "Approve",
-            "Yes", "Confirm", "Proceed", "Accept", "Continue", "OK", "Trust", "Got it", "Install", "Open"
+            "Yes", "Confirm", "Proceed", "Accept", "Continue", "OK", "Trust", "Got it", "Install", "Open",
+            "Run Command", "Run", "Execute", "Always Allow Command", "Always Run", "Run Tool", "Allow Tool"
         };
         private static readonly string[] DefaultCheckboxes =
         {
-            "Remember", "Always", "Trust", "Don't ask", "Don't show"
+            "Remember", "Always", "Trust", "Don't ask", "Don't show", "Remember my choice", "Do not ask again"
         };
+
+        // Declared here (after DefaultPrompt/DefaultButtons/DefaultCheckboxes above) so those
+        // are already initialized by the time this field's own initializer runs the constructor.
+        public static readonly ApproverEngine Shared = new();
 
         private readonly System.Threading.Timer _timer;
         private DateTime _lastActionTime = DateTime.MinValue;
-        private readonly TimeSpan _cooldown = TimeSpan.FromSeconds(1.2);
+        private readonly TimeSpan _cooldown = TimeSpan.FromSeconds(1.0);
         private volatile bool _ocrScanInFlight;
         private readonly object _scanLock = new();
 
@@ -81,8 +146,6 @@ namespace NoInteraction.Core
             var buttons = _settings.ButtonRules.Count > 0
                 ? _settings.ButtonRules
                 : DefaultButtons.Select(k => new ApprovalRule(k, TargetType.Button)).ToList();
-            buttons.RemoveAll(r => string.Equals(r.Keyword, "Run", StringComparison.OrdinalIgnoreCase)
-                                 || string.Equals(r.Keyword, "Execute", StringComparison.OrdinalIgnoreCase));
             foreach (var r in buttons) ButtonRules.Add(r);
 
             var checkboxes = _settings.CheckboxRules.Count > 0
@@ -90,10 +153,36 @@ namespace NoInteraction.Core
                 : DefaultCheckboxes.Select(k => new ApprovalRule(k, TargetType.Checkbox)).ToList();
             foreach (var r in checkboxes) CheckboxRules.Add(r);
 
+            if (_settings.PromptQueue.Count > 0)
+            {
+                foreach (var pq in _settings.PromptQueue) PromptQueue.Add(pq);
+            }
+            else
+            {
+                PromptQueue.Add(DefaultPrompt);
+            }
+            _currentPromptIndex = _settings.CurrentPromptIndex;
+            _isPromptQueueActive = _settings.IsPromptQueueActive;
+            _loopModeEnabled = _settings.LoopModeEnabled;
+            _loopModeLimit = _settings.LoopModeLimit;
+            _loopModeCounter = _settings.LoopModeCounter;
+
             ButtonRules.CollectionChanged += (_, _) => SaveRules();
             CheckboxRules.CollectionChanged += (_, _) => SaveRules();
+            PromptQueue.CollectionChanged += (_, _) => SavePromptQueue();
 
-            _timer = new System.Threading.Timer(_ => ScheduleScan(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3));
+            // The population loops above ran before these handlers were subscribed, so on a
+            // fresh install (defaults substituted in-memory) or a fresh queue, settings.json
+            // would otherwise stay stale/empty until some unrelated save touched the file —
+            // any other property setter would then persist that stale ButtonRules/CheckboxRules/
+            // PromptQueue snapshot straight from disk-load, clobbering what's actually active.
+            SaveRules();
+            SavePromptQueue();
+
+            // Fixed 1-second cadence so a prompt gets clicked within ~1s of appearing,
+            // whether or not a target app was already active on the previous tick — no
+            // more slow "idle" polling interval that delayed the very first detection.
+            _timer = new System.Threading.Timer(_ => ScheduleScan(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         }
 
         private void SaveRules()
@@ -101,6 +190,34 @@ namespace NoInteraction.Core
             _settings.ButtonRules = ButtonRules.ToList();
             _settings.CheckboxRules = CheckboxRules.ToList();
             _settings.Save();
+        }
+
+        public void SavePromptQueue()
+        {
+            _settings.PromptQueue = PromptQueue.ToList();
+            _settings.Save();
+        }
+
+        public void ResetPromptQueueToDefault()
+        {
+            PromptQueue.Clear();
+            PromptQueue.Add(DefaultPrompt);
+            CurrentPromptIndex = 0;
+            IsPromptQueueActive = true;
+        }
+
+        public bool IsElevated
+        {
+            get
+            {
+                try
+                {
+                    using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+                    var principal = new System.Security.Principal.WindowsPrincipal(identity);
+                    return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+                }
+                catch { return false; }
+            }
         }
 
         // MARK: Scan loop
@@ -111,15 +228,7 @@ namespace NoInteraction.Core
             if (DateTime.Now - _lastActionTime < _cooldown) return;
 
             var targetApps = AppObserver.Shared.FindTargetApplications();
-            if (targetApps.Count == 0)
-            {
-                // Slow down scan frequency when no target applications are running
-                _timer.Change(TimeSpan.FromSeconds(3.5), TimeSpan.FromSeconds(3.5));
-                return;
-            }
-
-            // Speed up scan frequency (1s) when target applications are active
-            _timer.Change(TimeSpan.FromSeconds(1.0), TimeSpan.FromSeconds(1.0));
+            if (targetApps.Count == 0) return;
 
             List<string> buttons = new();
             List<string> checkboxes = new();
@@ -129,13 +238,31 @@ namespace NoInteraction.Core
                 checkboxes = CheckboxRules.Where(r => r.IsEnabled).Select(r => r.Keyword).ToList();
             });
 
-            if (buttons.Count == 0) return;
+            // Note: checkbox ticking still needs to happen even when there are no enabled
+            // button rules, so only bail out when there's nothing at all to look for.
+            if (buttons.Count == 0 && checkboxes.Count == 0) return;
 
             foreach (var app in targetApps)
             {
                 string appName;
                 try { appName = string.IsNullOrEmpty(app.MainWindowTitle) ? app.ProcessName : app.MainWindowTitle; }
                 catch { appName = "Target App"; }
+
+                if (AppObserver.Shared.IsTerminal(app) && TerminalMonitoringEnabled)
+                {
+                    try
+                    {
+                        var termResponse = UiaInspector.Shared.InspectTerminalForPrompts(app, buttons);
+                        if (!string.IsNullOrEmpty(termResponse))
+                        {
+                            _lastActionTime = DateTime.Now;
+                            System.Windows.Forms.SendKeys.SendWait(termResponse);
+                            Record(appName, "Terminal Prompt", "UIA Terminal");
+                            return;
+                        }
+                    }
+                    catch { }
+                }
 
                 UiaInspector.InspectionResult? result;
                 try { result = UiaInspector.Shared.InspectAndAutoApprove(app, buttons, checkboxes); }
@@ -157,8 +284,9 @@ namespace NoInteraction.Core
                 }
             }
 
-            // Pass 2: OCR fallback if nothing was found via UI Automation
-            if (_ocrScanInFlight) return;
+            // Pass 2: OCR fallback if nothing was found via UI Automation (OCR only ever
+            // looks for button text, so skip it entirely when there are no button rules).
+            if (_ocrScanInFlight || buttons.Count == 0) return;
             foreach (var app in targetApps)
             {
                 var bounds = AppObserver.Shared.GetWindowBounds(app);

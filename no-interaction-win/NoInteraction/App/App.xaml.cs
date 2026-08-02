@@ -1,7 +1,9 @@
 using System;
+using System.Diagnostics;
+using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
-using System.Windows.Threading;
 using NoInteraction.Core;
 using NoInteraction.UI;
 
@@ -9,32 +11,41 @@ namespace NoInteraction
 {
     public partial class App : System.Windows.Application
     {
-        private static Mutex? _mutex;
-        private static EventWaitHandle? _showEventHandle;
+        private static Mutex? _instanceLock;
 
         protected override void OnStartup(StartupEventArgs e)
         {
-            const string mutexName = "NoInteraction_SingleInstance_Mutex";
-            const string eventName = "NoInteraction_SingleInstance_ShowEvent";
-
-            _mutex = new Mutex(true, mutexName, out bool isNewInstance);
-            _showEventHandle = new EventWaitHandle(false, EventResetMode.AutoReset, eventName);
-
-            if (!isNewInstance)
-            {
-                // Signal the already-running instance to show its Dashboard window, then exit.
-                _showEventHandle.Set();
-                Environment.Exit(0);
-                return;
-            }
-
             base.OnStartup(e);
 
-            // Listen for signals from double-clicks or shortcut launches while already running.
-            ThreadPool.RegisterWaitForSingleObject(_showEventHandle, (state, timedOut) =>
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+            // Kill any previous orphan instances completely
+            try
             {
-                Dispatcher.BeginInvoke(new Action(() => TrayManager.Shared.ShowDashboard()));
-            }, null, -1, false);
+                var currentProc = Process.GetCurrentProcess();
+                var others = Process.GetProcessesByName("NoInteraction").Where(p => p.Id != currentProc.Id).ToList();
+                foreach (var p in others)
+                {
+                    try
+                    {
+                        p.Kill();
+                        p.WaitForExit(1000);
+                    }
+                    catch { }
+                    finally { p.Dispose(); }
+                }
+            }
+            catch { }
+
+            // The kill step above isn't atomic — two near-simultaneous launches could both
+            // see no conflicting process and both survive. Claim a named mutex to guarantee
+            // only one of them actually proceeds; the loser just steps aside.
+            _instanceLock = new Mutex(true, "Local\\NoInteraction_SingleInstance_Mutex", out bool acquired);
+            if (!acquired)
+            {
+                Shutdown();
+                return;
+            }
 
             // Touch ApproverEngine.Shared to start the scan timer immediately.
             _ = ApproverEngine.Shared;
@@ -43,17 +54,21 @@ namespace NoInteraction
             TrayManager.Shared.Setup();
 
             // Display the main Dashboard window immediately on startup
-            Dispatcher.BeginInvoke(new Action(() => TrayManager.Shared.ShowDashboard()), DispatcherPriority.Loaded);
+            TrayManager.Shared.ShowDashboard();
 
             Console.WriteLine("NoInteraction started — listening for Antigravity/VS Code prompts");
         }
 
         protected override void OnExit(ExitEventArgs e)
         {
-            ApproverEngine.Shared.Dispose();
-            TrayManager.Shared.Dispose();
-            _mutex?.ReleaseMutex();
+            try { ApproverEngine.Shared.Dispose(); } catch { }
+            try { TrayManager.Shared.Dispose(); } catch { }
+            try { _instanceLock?.ReleaseMutex(); } catch { }
+            try { _instanceLock?.Dispose(); } catch { }
             base.OnExit(e);
         }
     }
 }
+
+
+

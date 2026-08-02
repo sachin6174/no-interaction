@@ -75,7 +75,15 @@ class OcrScanner:
             line_text = " ".join(words)
             if not line_text or len(line_text) > 40:
                 continue
-            if not any(KeywordMatcher.matches(line_text, k) for k in button_keywords):
+            
+            def _match_kw(txt: str, kw: str) -> bool:
+                k = kw.strip()
+                t = txt.strip()
+                if not k or not t:
+                    return False
+                return KeywordMatcher.matches(t, k) if " " in k else t.lower() == k.lower()
+
+            if not any(_match_kw(line_text, k) for k in button_keywords):
                 continue
 
             min_x = min(data["left"][i] for i in idxs)

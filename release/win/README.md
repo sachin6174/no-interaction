@@ -1,24 +1,34 @@
-# NoInteraction (Windows) — Compilation Instructions
+# NoInteraction (Windows) — Release Artifacts
 
-Since compiling Windows WPF applications requires a Windows OS environment, you can compile the self-contained, single-file executable using the pre-configured script from a Windows machine.
+This folder holds the latest built Windows release, published automatically by
+`no-interaction-win\build-installer.ps1` (via `publish-release.ps1`) every time
+it's run — the version number always matches the current build.
 
-## Prerequisites
+- **`NoInteractionSetup-v<version>.exe`** — recommended. A double-clickable
+  installer (built with Inno Setup): no admin rights needed, installs to
+  `%LocalAppData%\Programs\NoInteraction`, adds a Start Menu entry and
+  uninstaller, with optional desktop shortcut / launch-at-startup checkboxes.
+- **`NoInteraction-v<version>.zip`** — the raw self-contained exe, no
+  installer. Unzip and run `NoInteraction.exe` directly; no .NET runtime
+  install needed on the target machine.
+
+## Building it yourself
+
+Since compiling Windows WPF applications requires a Windows OS environment,
+build from a Windows machine:
 
 1. A computer running **Windows 10/11**.
-2. **.NET 8.0 SDK** (or higher) installed. Download from: [dot.net](https://dot.net).
+2. **.NET 8.0 SDK** (or higher) — [dot.net](https://dot.net).
+3. **Inno Setup 6** (only needed for the installer) —
+   `winget install JRSoftware.InnoSetup`.
 
-## How to Build
+From `no-interaction-win/` in PowerShell:
 
-1. Copy the `no-interaction-win/` directory to your Windows machine.
-2. Open **PowerShell** in the `no-interaction-win/` directory.
-3. Run the following command to build the executable:
-   ```powershell
-   .\build.ps1
-   ```
+```powershell
+.\build-installer.ps1
+```
 
-4. Once compiled, a standalone executable will be generated at:
-   ```
-   no-interaction-win\dist\NoInteraction.exe
-   ```
-
-You can copy `NoInteraction.exe` anywhere and start using it directly!
+This bumps the version, publishes and signs `dist\NoInteraction.exe`, builds
+and signs `dist\NoInteractionSetup.exe`, and republishes both here in
+`release\win\`. For just the raw exe without the installer or release
+publishing step, run `.\build.ps1` instead.

@@ -94,6 +94,7 @@ __pycache__/
 *$py.class
 .venv/
 .venv*/
+.venv_ssh/
 venv/
 env/
 ENV/
@@ -113,6 +114,8 @@ eggs/
 [Oo]bj/
 [Dd]ebug/
 [Rr]elease/
+Output/
+installer_output/
 *.nupkg
 *.snupkg
 *.pubxml.user

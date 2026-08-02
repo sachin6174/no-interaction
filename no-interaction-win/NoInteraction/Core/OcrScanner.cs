@@ -65,7 +65,14 @@ namespace NoInteraction.Core
                     var text = line.Text.Trim();
                     if (string.IsNullOrEmpty(text) || text.Length > 40) continue;
 
-                    var isMatch = buttonKeywords.Any(k => KeywordMatcher.Matches(text, k));
+                    // OCR has no way to verify an element is actually clickable — unlike UI
+                    // Automation it can't check for an Invoke pattern, it just reads pixels.
+                    // A generic single word ("Run", "OK", "Yes", "Continue", ...) shows up
+                    // constantly in ordinary UI chrome (menu bars, toolbars, "Continue
+                    // reading" links, ...), so only match on distinctive multi-word phrases
+                    // here ("Always Allow", "Run Command", ...) that are very unlikely to
+                    // appear anywhere except a real approval dialog.
+                    var isMatch = buttonKeywords.Any(k => k.Trim().Contains(' ') && KeywordMatcher.Matches(text, k));
                     if (!isMatch) continue;
 
                     var words = line.Words;
@@ -94,11 +101,16 @@ namespace NoInteraction.Core
             return (null, null);
         }
 
-        /// <summary>Returns only the bottom ~30% of the window — where approval buttons live.</summary>
+        /// <summary>Real prompts in these agent chat panels render somewhere in the right-side
+        /// chat panel — not necessarily pinned to the bottom edge, since it's a scrolling
+        /// conversation — but never in the menu bar or a left-hand sidebar. Matches
+        /// UiaInspector's PromptRegionOf so both detection paths agree on where a prompt can
+        /// legitimately be, and it's cheaper to capture/OCR than the full window.</summary>
         private Rect ButtonStripRect(Rect bounds)
         {
-            var stripH = Math.Max(80, bounds.Height * 0.30);
-            return new Rect(bounds.X, bounds.Bottom - stripH, bounds.Width, stripH);
+            var regionWidth = bounds.Width * 0.55;
+            var regionHeight = bounds.Height * 0.8;
+            return new Rect(bounds.Right - regionWidth, bounds.Bottom - regionHeight, regionWidth, regionHeight);
         }
 
         private Bitmap? CaptureScreenRegion(Rect rect)

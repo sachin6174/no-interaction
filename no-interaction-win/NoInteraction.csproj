@@ -6,40 +6,61 @@
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- DPI awareness is declared in app.manifest instead of via ApplicationHighDpiMode:
+         that MSBuild property only takes effect through the WinForms-generated Main/
+         ApplicationConfiguration.Initialize() bootstrap, which this project doesn't use
+         since its entry point is the WPF App class. Here it would be a silent no-op that
+         leaves the process DPI-unaware, so the manifest is the only mechanism that works. -->
     <Nullable>enable</Nullable>
     <RootNamespace>NoInteraction</RootNamespace>
     <AssemblyName>NoInteraction</AssemblyName>
     <ApplicationManifest>NoInteraction/App/app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <StartupObject>NoInteraction.App</StartupObject>
     <Platforms>x64</Platforms>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <Version>1.3.0</Version>
-    <AssemblyVersion>1.3.0.0</AssemblyVersion>
-    <FileVersion>1.3.0.0</FileVersion>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <Version>1.15.0</Version>
+    <AssemblyVersion>1.15.0.0</AssemblyVersion>
+    <FileVersion>1.15.0.0</FileVersion>
+    <!-- WFAC010 assumes every WinForms-enabled project boots through the SDK-generated
+         Main/ApplicationConfiguration.Initialize(), which is what actually applies
+         ApplicationHighDpiMode. This project's entry point is the WPF App class instead,
+         so that property is inert here and the manifest is the only mechanism that works
+         (verified: obj/**/*.editorconfig shows the property never reaches a generated
+         SetHighDpiMode call). Suppressed rather than "fixed" per the warning's own advice,
+         which would silently drop DPI awareness and break click-coordinate accuracy. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- The SDK only auto-detects App.xaml as ApplicationDefinition when it sits at the
-         project root. Ours is nested under NoInteraction/App/, so classify explicitly. -->
+         project root. Ours is nested under NoInteraction/App/, so classify explicitly with Link tags. -->
     <Page Remove="**/*.xaml" />
     <ApplicationDefinition Include="NoInteraction/App/App.xaml">
+      <Link>App.xaml</Link>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
     <Page Include="NoInteraction/UI/DashboardWindow.xaml">
+      <Link>UI/DashboardWindow.xaml</Link>
       <SubType>Designer</SubType>
     </Page>
   </ItemGroup>
 
   <ItemGroup>
-    <!-- UI Automation client APIs are not part of the default WPF shared framework
-         and must be referenced explicitly. -->
-    <Reference Include="UIAutomationClient" />
-    <Reference Include="UIAutomationTypes" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.8" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Drawing.Common" Version="8.0.8" />
+    <!-- Embedded (not just ApplicationIcon) so TrayManager can load the same artwork at
+         runtime to build the tray icon — works from a single-file publish, where app.ico
+         isn't present on disk as a loose file. -->
+    <EmbeddedResource Include="app.ico">
+      <LogicalName>NoInteraction.app.ico</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
+
 
 </Project>

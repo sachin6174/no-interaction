@@ -11,7 +11,12 @@ namespace NoInteraction.Core
     {
         public static readonly AppObserver Shared = new();
 
-        /// <summary>Process/window-title fragments to monitor — matches by substring (case-insensitive).</summary>
+        /// <summary>Process/window-title fragments to monitor — matches by substring (case-insensitive).
+        /// Deliberately excludes bare "Code"/"chat": as substrings they match almost anything (any app
+        /// or window with "code" or "chat" anywhere in its title/name — the actual cause of this app
+        /// scanning and clicking inside unrelated windows). VS Code is still caught precisely via its
+        /// exact process name ("Code.exe") in FindTargetApplications/IsEditor below, and via its
+        /// window title, which normally does include "Visual Studio Code".</summary>
         public List<string> TargetAppNames { get; } = new()
         {
             "Antigravity",
@@ -20,12 +25,24 @@ namespace NoInteraction.Core
             "Visual Studio Code",
             "VS Code",
             "VSCode",
-            "Code"
+            "Cursor",
+            "Windsurf",
+            "Chrome",
+            "msedge",
+            "Edge",
+            "Brave",
+            "Firefox",
+            "Opera",
+            "Vivaldi",
+            "Arc"
         };
+
+        /// <summary>Exact (not substring) process names that identify an editor precisely.</summary>
+        private static readonly string[] EditorProcessNames = { "code" };
 
         private static readonly string[] EditorNames =
         {
-            "visual studio code", "vs code", "vscode", "cursor", "windsurf", "antigravity", "code.exe"
+            "visual studio code", "vs code", "vscode", "cursor", "windsurf", "antigravity"
         };
 
         private static readonly string[] BrowserProcessNames =
@@ -33,11 +50,25 @@ namespace NoInteraction.Core
             "chrome", "msedge", "brave", "firefox", "opera", "vivaldi", "arc"
         };
 
+        private static readonly string[] TerminalProcessNames =
+        {
+            "windowsterminal", "cmd", "powershell", "pwsh", "conhost"
+        };
+
         private AppObserver() { }
+
+        public bool IsTerminal(Process app)
+        {
+            var procName = (app.ProcessName ?? "").ToLowerInvariant();
+            return TerminalProcessNames.Any(procName.Contains);
+        }
 
         public bool IsEditor(Process app)
         {
-            var name = (SafeMainWindowTitle(app) + " " + app.ProcessName).ToLowerInvariant();
+            var procName = (app.ProcessName ?? "").ToLowerInvariant();
+            if (EditorProcessNames.Contains(procName)) return true;
+
+            var name = (SafeMainWindowTitle(app) + " " + procName);
             return EditorNames.Any(name.Contains);
         }
 
@@ -49,7 +80,10 @@ namespace NoInteraction.Core
 
         public bool IsBrowserOrEditor(Process app) => IsBrowser(app) || IsEditor(app);
 
-        /// <summary>Checks whether a top-level window's title contains any Antigravity keyword.</summary>
+        /// <summary>Checks whether a top-level window's title contains any Antigravity or target keyword.
+        /// Deliberately excludes bare "chat"/"code": those match nearly any window title (a coding
+        /// tool's own terminal tab, a support-chat widget, an unrelated "source code" article, ...),
+        /// which was letting this app scan and click inside windows it was never meant to touch.</summary>
         public bool IsAntigravityWindow(AutomationElement window)
         {
             string title;
@@ -69,22 +103,42 @@ namespace NoInteraction.Core
                                             .ToList();
 
             var results = new List<Process>();
+            var seenPids = new HashSet<int>();
+
             foreach (var proc in Process.GetProcesses())
             {
+                // Process.GetProcesses() hands back a live handle per process; every one we
+                // don't keep in `results` must be disposed here or it leaks a handle on every
+                // scan tick (this loop runs every 1-3.5s for as long as the app is alive).
+                var kept = false;
                 try
                 {
-                    if (proc.MainWindowHandle == IntPtr.Zero) continue;
-                    var title = proc.MainWindowTitle ?? "";
+                    if (seenPids.Contains(proc.Id)) continue;
+
+                    var title = SafeMainWindowTitle(proc);
                     var procName = proc.ProcessName ?? "";
                     var haystack = title + " " + procName;
-                    if (allTargets.Any(t => haystack.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0))
+
+                    bool isMatch = allTargets.Any(t => haystack.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0)
+                                 || EditorProcessNames.Contains(procName.ToLowerInvariant());
+                    if (!isMatch) continue;
+
+                    // Ensure the process has top-level windows before considering it active
+                    var windows = GetTopLevelWindows(proc);
+                    if (windows.Count > 0)
                     {
                         results.Add(proc);
+                        seenPids.Add(proc.Id);
+                        kept = true;
                     }
                 }
                 catch
                 {
-                    // Process may have exited or be inaccessible mid-enumeration; skip it.
+                    // Process may have exited or be inaccessible; skip it.
+                }
+                finally
+                {
+                    if (!kept) proc.Dispose();
                 }
             }
             return results;
@@ -143,3 +197,4 @@ namespace NoInteraction.Core
         }
     }
 }
+

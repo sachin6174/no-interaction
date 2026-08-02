@@ -46,23 +46,60 @@ namespace NoInteraction.Core
             // Pass 1: auto-tick matching checkboxes across windows
             if (checkboxKeywords.Count > 0)
             {
-                foreach (var win in windows) TickCheckboxes(win, 0, checkboxKeywords);
+                foreach (var win in windows) TickCheckboxes(win, 0, checkboxKeywords, PromptRegionOf(win));
             }
 
             // Pass 2: find & press the first matching approval button
             var allKeywords = buttonKeywords.Concat(checkboxKeywords).ToList();
             foreach (var win in windows)
             {
-                var hasSelection = IsAnyRadioSelected(win, 0, allKeywords);
-                var result = FindAndPressButton(win, 0, buttonKeywords, hasSelection);
+                var region = PromptRegionOf(win);
+                var hasSelection = IsAnyRadioSelected(win, 0, allKeywords, region);
+                var result = FindAndPressButton(win, 0, buttonKeywords, hasSelection, region);
                 if (result != null) return result;
             }
             return null;
         }
 
+        /// <summary>
+        /// Real approval/confirmation prompts in these target apps (Antigravity/Cursor/
+        /// VS Code-style agent chat panels) show up somewhere in the chat panel docked on
+        /// the right side of the window — not necessarily pinned to the very bottom edge,
+        /// since it's a scrolling conversation (a permission prompt can sit mid-panel above
+        /// later messages, not just right next to the input box). What it's never in is the
+        /// menu bar, a toolbar, or a left-hand sidebar — those are reliably anchored to the
+        /// top and left respectively, so excluding just the top ~20% and left ~45% of the
+        /// window filters out that whole class of false positive (a menu's "Run", a
+        /// toolbar's "Open", ...) without needing to require the exact bottom corner.
+        /// </summary>
+        private Rect? PromptRegionOf(AutomationElement window)
+        {
+            try
+            {
+                var bounds = window.Current.BoundingRectangle;
+                if (bounds.IsEmpty || bounds.Width <= 0 || bounds.Height <= 0) return null;
+                var regionWidth = bounds.Width * 0.55;
+                var regionHeight = bounds.Height * 0.8;
+                return new Rect(bounds.Right - regionWidth, bounds.Bottom - regionHeight, regionWidth, regionHeight);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private bool IsInPromptRegion(Point? point, Rect? region)
+        {
+            // No region computed (e.g. couldn't read window bounds) — fail open rather than
+            // silently going blind to every prompt in that window.
+            if (region == null) return true;
+            if (point == null) return false;
+            return region.Value.Contains(point.Value);
+        }
+
         // MARK: Pass 1 — Checkbox ticking
 
-        private void TickCheckboxes(AutomationElement element, int depth, List<string> keywords)
+        private void TickCheckboxes(AutomationElement element, int depth, List<string> keywords, Rect? region)
         {
             if (depth > 25) return;
             if (!TryGetControlType(element, out var controlType)) return;
@@ -71,7 +108,7 @@ namespace NoInteraction.Core
             if (controlType == ControlType.CheckBox || controlType == ControlType.RadioButton)
             {
                 var label = ElementLabel(element);
-                if (keywords.Any(k => KeywordMatcher.Matches(label, k)))
+                if (keywords.Any(k => KeywordMatcher.Matches(label, k)) && IsInPromptRegion(CenterOf(element), region))
                 {
                     if (TryToggleOn(element))
                     {
@@ -82,7 +119,7 @@ namespace NoInteraction.Core
 
             foreach (var child in Children(element))
             {
-                TickCheckboxes(child, depth + 1, keywords);
+                TickCheckboxes(child, depth + 1, keywords, region);
             }
         }
 
@@ -119,55 +156,104 @@ namespace NoInteraction.Core
 
         // MARK: Pass 2 — Button pressing
 
-        private InspectionResult? FindAndPressButton(AutomationElement element, int depth, List<string> keywords, bool hasSelection)
+        private InspectionResult? FindAndPressButton(AutomationElement element, int depth, List<string> keywords, bool hasSelection, Rect? region)
         {
             if (depth > 25) return null;
             if (!TryGetControlType(element, out var controlType)) return null;
             if (IsIgnoredElement(element, controlType)) return null;
 
-            if (controlType == ControlType.Button || 
-                controlType == ControlType.SplitButton || 
-                controlType == ControlType.RadioButton || 
-                controlType == ControlType.Custom || 
-                controlType == ControlType.Hyperlink || 
-                controlType == ControlType.MenuItem)
+            // "Strong" roles are natively actionable controls: if their label matches and
+            // Invoke isn't wired up, we still trust a blind coordinate click because the
+            // control type itself proves it's really a button. "Weak" roles (Custom/Group/
+            // Pane/Text/Document/ListItem/Image) exist to catch Electron/Chromium buttons
+            // that don't map to a native role — but plenty of ordinary, non-clickable text,
+            // panes, and images match those roles too. For those we require proof: only act
+            // if TryInvoke (or a selection/toggle pattern) actually succeeds. If it doesn't,
+            // that's not a button — keep scanning instead of blind-clicking wherever the
+            // matching text happens to be on screen.
+            bool isStrongRole =
+                controlType == ControlType.Button ||
+                controlType == ControlType.SplitButton ||
+                controlType == ControlType.RadioButton ||
+                controlType == ControlType.Hyperlink ||
+                controlType == ControlType.MenuItem;
+
+            bool isWeakRole =
+                controlType == ControlType.Custom ||
+                controlType == ControlType.Group ||
+                controlType == ControlType.Pane ||
+                controlType == ControlType.Text ||
+                controlType == ControlType.Document ||
+                controlType == ControlType.ListItem ||
+                controlType == ControlType.Image;
+
+            if (isStrongRole || isWeakRole)
             {
-                if (controlType == ControlType.RadioButton && hasSelection) return null;
-
-                var label = ElementLabel(element);
-                var isMatch = !string.IsNullOrEmpty(label) && keywords.Any(k => KeywordMatcher.Matches(label, k));
-
-                if (isMatch)
+                if (!(controlType == ControlType.RadioButton && hasSelection))
                 {
-                    var display = string.IsNullOrEmpty(label) ? "Approval Button" : label;
-                    var center = CenterOf(element);
+                    var label = ElementLabel(element);
+                    // A single generic word (e.g. "Open", "Run", "Yes") must match the WHOLE
+                    // label exactly — VS Code's real "Quick Open" command button legitimately
+                    // contains "Open" as a whole word, but pressing it opens the command
+                    // palette, not an approval dialog. Multi-word phrases ("Always Allow",
+                    // "Run Command") are distinctive enough to keep using the more permissive
+                    // word-boundary match from KeywordMatcher.
+                    var matchedKeyword = (!string.IsNullOrEmpty(label) && label.Length <= 60)
+                        ? keywords.FirstOrDefault(k => !string.IsNullOrWhiteSpace(k) && (
+                              k.Trim().Contains(' ')
+                                  ? KeywordMatcher.Matches(label, k)
+                                  : string.Equals(label.Trim(), k.Trim(), StringComparison.OrdinalIgnoreCase)))
+                        : null;
 
-                    if (TryInvoke(element))
+                    var center = matchedKeyword != null ? CenterOf(element) : null;
+
+                    // Real approval buttons live bottom-right by the chat input; a text match
+                    // anywhere else (menu bar, sidebar, toolbar) is almost certainly an
+                    // unrelated button that just happens to share the same word — don't even
+                    // attempt invoke on it, just keep walking its children.
+                    if (matchedKeyword != null && IsInPromptRegion(center, region))
                     {
-                        Console.WriteLine($"[UiaInspector] Invoke succeeded on '{display}' (role={controlType.ProgrammaticName}, depth={depth})");
-                        return new InspectionResult("Invoke", display, center);
-                    }
-                    if (controlType == ControlType.RadioButton && TrySelect(element))
-                    {
-                        return new InspectionResult("SelectionItem", display, center);
-                    }
-                    if (center.HasValue)
-                    {
-                        Console.WriteLine($"[UiaInspector] Invoke failed for '{display}', requesting fallback click at {center}");
-                        return new InspectionResult("Fallback Click Needed", display, center);
+                        var display = string.IsNullOrEmpty(label) ? "Approval Button" : label;
+
+                        if (TryInvoke(element))
+                        {
+                            Console.WriteLine($"[UiaInspector] Invoke/LegacyAction succeeded on '{display}' (role={controlType.ProgrammaticName}, depth={depth})");
+                            return new InspectionResult("Invoke", display, center);
+                        }
+                        if (controlType == ControlType.RadioButton && TrySelect(element))
+                        {
+                            return new InspectionResult("SelectionItem", display, center);
+                        }
+
+                        // Native invoke failed, so we can't prove this element is really
+                        // clickable — we're about to guess based on label text alone. A bare
+                        // single word like "Run"/"OK"/"Yes" is exactly as likely to be an
+                        // ordinary, unrelated button (a toolbar "Run" button, a "Continue
+                        // reading" link, ...) as it is a real approval prompt. Only risk the
+                        // blind coordinate click for distinctive multi-word phrases ("Always
+                        // Allow", "Run Command", "Yes, allow", ...) that are very unlikely to
+                        // appear anywhere except an actual confirmation dialog.
+                        bool isDistinctiveKeyword = matchedKeyword.Trim().Contains(' ');
+                        if (isStrongRole && isDistinctiveKeyword && center.HasValue)
+                        {
+                            Console.WriteLine($"[UiaInspector] Native invoke failed for '{display}', requesting fallback click at {center}");
+                            return new InspectionResult("Fallback Click Needed", display, center);
+                        }
+
+                        Console.WriteLine($"[UiaInspector] '{display}' (role={controlType.ProgrammaticName}) matched '{matchedKeyword}' but isn't provably invokable — skipping instead of guessing.");
                     }
                 }
             }
 
             foreach (var child in Children(element))
             {
-                var r = FindAndPressButton(child, depth + 1, keywords, hasSelection);
+                var r = FindAndPressButton(child, depth + 1, keywords, hasSelection, region);
                 if (r != null) return r;
             }
             return null;
         }
 
-        private bool IsAnyRadioSelected(AutomationElement element, int depth, List<string> keywords)
+        private bool IsAnyRadioSelected(AutomationElement element, int depth, List<string> keywords, Rect? region)
         {
             if (depth > 25) return false;
             if (!TryGetControlType(element, out var controlType)) return false;
@@ -176,7 +262,7 @@ namespace NoInteraction.Core
             if (controlType == ControlType.RadioButton || controlType == ControlType.CheckBox)
             {
                 var label = ElementLabel(element);
-                if (!string.IsNullOrEmpty(label) && keywords.Any(k => KeywordMatcher.Matches(label, k)))
+                if (!string.IsNullOrEmpty(label) && keywords.Any(k => KeywordMatcher.Matches(label, k)) && IsInPromptRegion(CenterOf(element), region))
                 {
                     if (IsSelectedOrChecked(element)) return true;
                 }
@@ -184,7 +270,7 @@ namespace NoInteraction.Core
 
             foreach (var child in Children(element))
             {
-                if (IsAnyRadioSelected(child, depth + 1, keywords)) return true;
+                if (IsAnyRadioSelected(child, depth + 1, keywords, region)) return true;
             }
             return false;
         }
@@ -199,10 +285,28 @@ namespace NoInteraction.Core
                     return true;
                 }
             }
-            catch
+            catch { }
+
+            try
             {
-                // Falls through to selection/fallback-click handling below.
+                if (element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var selObj))
+                {
+                    ((SelectionItemPattern)selObj).Select();
+                    return true;
+                }
             }
+            catch { }
+
+            try
+            {
+                if (element.TryGetCurrentPattern(TogglePattern.Pattern, out var togObj))
+                {
+                    ((TogglePattern)togObj).Toggle();
+                    return true;
+                }
+            }
+            catch { }
+
             return false;
         }
 
@@ -266,32 +370,52 @@ namespace NoInteraction.Core
             }
         }
 
-        /// <summary>Reads the element's Name, falling back to child Text nodes (needed for
+        /// <summary>Reads direct element label, falling back to recursive child text nodes (needed for
         /// Electron/Chromium web content buttons whose accessible name lives on a child).</summary>
         private string ElementLabel(AutomationElement element)
         {
-            string text;
-            try { text = element.Current.Name?.Trim() ?? ""; }
+            string text = "";
+            try
+            {
+                var cur = element.Current;
+                text = cur.Name?.Trim() ?? "";
+                if (string.IsNullOrEmpty(text)) text = cur.HelpText?.Trim() ?? "";
+            }
             catch { text = ""; }
 
             if (string.IsNullOrEmpty(text))
             {
-                foreach (var child in Children(element))
-                {
-                    if (!TryGetControlType(child, out var ct)) continue;
-                    if (ct == ControlType.Text)
-                    {
-                        string childText;
-                        try { childText = child.Current.Name?.Trim() ?? ""; }
-                        catch { childText = ""; }
-                        if (!string.IsNullOrEmpty(childText))
-                        {
-                            text = text.Length == 0 ? childText : text + " " + childText;
-                        }
-                    }
-                }
+                text = RecursiveChildText(element, 0);
             }
             return text.Trim();
+        }
+
+        private string RecursiveChildText(AutomationElement element, int depth)
+        {
+            if (depth > 3) return "";
+            List<string> parts = new();
+            foreach (var child in Children(element))
+            {
+                string childText = "";
+                try
+                {
+                    var c = child.Current;
+                    childText = c.Name?.Trim() ?? "";
+                    if (string.IsNullOrEmpty(childText)) childText = c.HelpText?.Trim() ?? "";
+                }
+                catch { }
+
+                if (!string.IsNullOrEmpty(childText))
+                {
+                    parts.Add(childText);
+                }
+                else
+                {
+                    var deep = RecursiveChildText(child, depth + 1);
+                    if (!string.IsNullOrEmpty(deep)) parts.Add(deep);
+                }
+            }
+            return string.Join(" ", parts);
         }
 
         private List<AutomationElement> Children(AutomationElement element)
@@ -322,5 +446,91 @@ namespace NoInteraction.Core
                 return null;
             }
         }
+
+        public string? InspectTerminalForPrompts(Process app, List<string> buttonKeywords)
+        {
+            var windows = AppObserver.Shared.GetTopLevelWindows(app);
+            if (windows.Count == 0) return null;
+
+            var promptRegex = new System.Text.RegularExpressions.Regex(
+                @"(?i)(are you sure you want to continue connecting|do you want to continue|proceed with installation|accept the license|apply changes|proceed|continue)\??\s*[\(\[]\s*(yes/no/\[fingerprint\]|yes/no|y/n|y/n/\[fingerprint\]|y/n/c|y/n/a)\s*[\)\]]\s*$",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            );
+
+            foreach (var win in windows)
+            {
+                var textControls = FindTextControls(win, 0);
+                foreach (var textControl in textControls)
+                {
+                    string content = "";
+                    try
+                    {
+                        if (textControl.TryGetCurrentPattern(ValuePattern.Pattern, out var valObj))
+                        {
+                            content = ((ValuePattern)valObj).Current.Value ?? "";
+                        }
+                        else if (textControl.TryGetCurrentPattern(TextPattern.Pattern, out var textObj))
+                        {
+                            content = ((TextPattern)textObj).DocumentRange.GetText(200) ?? "";
+                        }
+                        else
+                        {
+                            content = textControl.Current.Name ?? "";
+                        }
+                    }
+                    catch { continue; }
+
+                    if (string.IsNullOrWhiteSpace(content)) continue;
+
+                    var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                                       .Select(l => l.Trim())
+                                       .Where(l => !string.IsNullOrEmpty(l))
+                                       .ToList();
+                    if (lines.Count == 0) continue;
+                    var lastLine = lines.Last();
+
+                    var match = promptRegex.Match(lastLine);
+                    if (match.Success)
+                    {
+                        var question = match.Groups[1].Value;
+                        var choices = match.Groups[2].Value.ToLowerInvariant();
+                        var response = choices.Contains("yes/no") ? "yes\r\n" : "y\r\n";
+
+                        bool isSafe = new[] { "proceed", "continue", "install", "accept", "trust", "connect", "allow", "confirm", "yes/no" }
+                            .Any(kw => question.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                            buttonKeywords.Any(kw => question.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0);
+
+                        if (isSafe)
+                        {
+                            Console.WriteLine($"[UiaInspector] Terminal prompt detected: '{lastLine}' -> Responding '{response.Trim()}'");
+                            return response;
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        private List<AutomationElement> FindTextControls(AutomationElement element, int depth)
+        {
+            if (depth > 15) return new List<AutomationElement>();
+            var results = new List<AutomationElement>();
+            try
+            {
+                var type = element.Current.ControlType;
+                if (type == ControlType.Text || type == ControlType.Edit || type == ControlType.Document)
+                {
+                    results.Add(element);
+                }
+            }
+            catch { }
+
+            foreach (var child in Children(element))
+            {
+                results.AddRange(FindTextControls(child, depth + 1));
+            }
+            return results;
+        }
     }
 }
+

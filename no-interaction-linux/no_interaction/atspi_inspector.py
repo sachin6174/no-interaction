@@ -75,6 +75,16 @@ class AtspiInspector:
                 return result
         return None
 
+    def _match_keyword(self, label: str, keyword: str) -> bool:
+        kw = keyword.strip()
+        lbl = label.strip()
+        if not kw or not lbl:
+            return False
+        if " " in kw:
+            return KeywordMatcher.matches(lbl, kw)
+        else:
+            return lbl.lower() == kw.lower()
+
     # MARK: Pass 1 — checkbox ticking
 
     def _tick_checkboxes(self, element, depth: int, keywords: list[str]) -> None:
@@ -86,7 +96,7 @@ class AtspiInspector:
 
         if role in (pyatspi.ROLE_CHECK_BOX, pyatspi.ROLE_RADIO_BUTTON):
             label = self._label(element)
-            if any(KeywordMatcher.matches(label, k) for k in keywords):
+            if any(self._match_keyword(label, k) for k in keywords):
                 if self._is_checked(element):
                     pass
                 elif self._activate(element):
@@ -109,7 +119,7 @@ class AtspiInspector:
                 return None
 
             label = self._label(element)
-            is_match = bool(label) and any(KeywordMatcher.matches(label, k) for k in keywords)
+            is_match = bool(label) and any(self._match_keyword(label, k) for k in keywords)
 
             if is_match:
                 display = label or "Approval Button"
