@@ -1,10 +1,9 @@
 # ==============================================================================
-# Global .gitignore — Multi-Platform Workspace (NoInteraction)
-# Prevents OS-specific files, build artifacts, IDE/editor configurations, 
-# and dependency environments from being tracked by git.
+# Git Ignore Configuration — NoInteraction Multi-Platform Workspace
+# Supports: macOS (Swift/SPM), Linux (Python), Windows (C#/.NET/WPF)
 # ==============================================================================
 
-# ── System / OS-Specific Files ────────────────────────────────────────────────
+# ── 1. Operating System Files ──────────────────────────────────────────────────
 # macOS
 .DS_Store
 .DS_Store?
@@ -21,6 +20,7 @@ Temporary Items
 
 # Windows
 Thumbs.db
+Thumbs.db:encryptable
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
@@ -29,75 +29,98 @@ $RECYCLE.BIN/
 # Linux
 .directory
 *~
+.fuse_hidden*
+.trash/
 
-# ── General Editors & IDEs ────────────────────────────────────────────────────
-.vscode/
+# ── 2. IDEs & Code Editors ────────────────────────────────────────────────────
+# Visual Studio Code
+.vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
-.idea/
+*.code-workspace
+
+# Visual Studio / MonoDevelop
+.vs/
 *.suo
-*.ntvs*
-*.njsproj
+*.user
+*.userosv
 *.sln.docstates
+*.userprefs
 
-# ── macOS & Swift App (no-interaction-mac) ────────────────────────────────────
-no-interaction-mac/.build/
-no-interaction-mac/.build_clean/
-no-interaction-mac/build/
-no-interaction-mac/build_dist/
-no-interaction-mac/DerivedData/
-no-interaction-mac/*.app/
-no-interaction-mac/*.pkg
-no-interaction-mac/*.dmg
-no-interaction-mac/*.zip
-no-interaction-mac/*.tar.gz
-no-interaction-mac/*.ipa
-no-interaction-mac/*.xcarchive
-no-interaction-mac/*.dSYM/
-no-interaction-mac/*.dSYM.zip
-no-interaction-mac/*.xcodeproj/xcuserdata/
-no-interaction-mac/*.xcodeproj/project.xcworkspace/xcuserdata/
-no-interaction-mac/*.xcworkspace/xcuserdata/
-no-interaction-mac/*.xcodeproj/xcshareddata/xcodeprojUsers/
-no-interaction-mac/.swiftpm/xcode/
-no-interaction-mac/.swiftpm/configuration/
+# JetBrains (PyCharm, Rider, CLion, WebStorm)
+.idea/
+*.iws
+*.iml
+*.ipr
 
-# ── Linux & Python App (no-interaction-linux) ──────────────────────────────────
-no-interaction-linux/.venv/
-no-interaction-linux/venv/
-no-interaction-linux/env/
-no-interaction-linux/ENV/
-no-interaction-linux/__pycache__/
-no-interaction-linux/*.pyc
-no-interaction-linux/*.pyo
-no-interaction-linux/*.pyd
-no-interaction-linux/.pytest_cache/
-no-interaction-linux/.mypy_cache/
-no-interaction-linux/.coverage
-no-interaction-linux/htmlcov/
-
-# ── Windows & C# App (no-interaction-win) ──────────────────────────────────────
-no-interaction-win/bin/
-no-interaction-win/obj/
-no-interaction-win/dist/
-no-interaction-win/.vs/
-no-interaction-win/*.user
-no-interaction-win/*.userosv
-no-interaction-win/*.suo
-
-# ── Logs, Caches & Temporary Files ─────────────────────────────────────────────
-*.log
-*.tmp
-*.temp
+# Vim & Emacs
 *.swp
-*.bak
-*.crash
-.cache/
-.clang-module-cache/
+*.swo
+.#*
+#*#
 
-# ── Security & Secrets ────────────────────────────────────────────────────────
+# ── 3. macOS & Swift / Xcode Build Artifacts ──────────────────────────────────
+.build/
+.build_clean/
+build/
+build_dist/
+DerivedData/
+*.app/
+*.pkg
+*.dmg
+*.ipa
+*.xcarchive
+*.dSYM/
+*.dSYM.zip
+*.o
+*.a
+*.dylib
+*.so
+*.framework/
+
+# Xcode & SwiftPM User Data
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcshareddata/xcodeprojUsers/
+.swiftpm/xcode/
+.swiftpm/configuration/
+
+# ── 4. Linux & Python Environments ───────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.venv*/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+sdist/
+eggs/
+.eggs/
+
+# ── 5. Windows & C# / .NET Build Artifacts ────────────────────────────────────
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+*.nupkg
+*.snupkg
+*.pubxml.user
+
+# ── 6. Security, Secrets & Private Configuration ──────────────────────────────
+.env
+.env.*
+!.env.example
 *.pem
 *.key
 *.p12
@@ -108,13 +131,15 @@ no-interaction-win/*.suo
 *.provisionprofile
 *.keychain
 *.keychain-db
-.env
-.env.*
-!.env.example
 credentials.json
 secrets.json
 sachin-person.config
-.venv_ssh/
-release/win/NoInteraction.exe
 
-
+# ── 7. Logs, Caches & Temporary Files ──────────────────────────────────────────
+*.log
+*.tmp
+*.temp
+*.bak
+*.crash
+.cache/
+.clang-module-cache/

@@ -1,5 +1,9 @@
-bin/
-obj/
-dist/
-*.user
+# Windows & .NET local ignores
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
 .vs/
+*.user
+*.suo
+*.userosv
