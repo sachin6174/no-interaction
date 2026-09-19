@@ -199,10 +199,7 @@ namespace NoInteraction.Core
                     // "Run Command") are distinctive enough to keep using the more permissive
                     // word-boundary match from KeywordMatcher.
                     var matchedKeyword = (!string.IsNullOrEmpty(label) && label.Length <= 60)
-                        ? keywords.FirstOrDefault(k => !string.IsNullOrWhiteSpace(k) && (
-                              k.Trim().Contains(' ')
-                                  ? KeywordMatcher.Matches(label, k)
-                                  : string.Equals(label.Trim(), k.Trim(), StringComparison.OrdinalIgnoreCase)))
+                        ? keywords.FirstOrDefault(k => KeywordMatcher.MatchesButton(label, k))
                         : null;
 
                     var center = matchedKeyword != null ? CenterOf(element) : null;
@@ -211,7 +208,8 @@ namespace NoInteraction.Core
                     // anywhere else (menu bar, sidebar, toolbar) is almost certainly an
                     // unrelated button that just happens to share the same word — don't even
                     // attempt invoke on it, just keep walking its children.
-                    if (matchedKeyword != null && IsInPromptRegion(center, region))
+                    if (matchedKeyword != null && IsInPromptRegion(center, region)
+                        && element.Current.IsEnabled && !element.Current.IsOffscreen)
                     {
                         var display = string.IsNullOrEmpty(label) ? "Approval Button" : label;
 
@@ -225,15 +223,12 @@ namespace NoInteraction.Core
                             return new InspectionResult("SelectionItem", display, center);
                         }
 
-                        // Native invoke failed, so we can't prove this element is really
-                        // clickable — we're about to guess based on label text alone. A bare
-                        // single word like "Run"/"OK"/"Yes" is exactly as likely to be an
-                        // ordinary, unrelated button (a toolbar "Run" button, a "Continue
-                        // reading" link, ...) as it is a real approval prompt. Only risk the
-                        // blind coordinate click for distinctive multi-word phrases ("Always
-                        // Allow", "Run Command", "Yes, allow", ...) that are very unlikely to
-                        // appear anywhere except an actual confirmation dialog.
-                        bool isDistinctiveKeyword = matchedKeyword.Trim().Contains(' ');
+                        // Allow is also eligible when UIA identifies an actual button.
+                        // Plain text/custom containers still require a working pattern;
+                        // generic single-word toolbar commands remain excluded here.
+                        bool isDistinctiveKeyword = matchedKeyword.Trim().Contains(' ')
+                            || ((controlType == ControlType.Button || controlType == ControlType.SplitButton)
+                                && string.Equals(matchedKeyword.Trim(), "Allow", StringComparison.OrdinalIgnoreCase));
                         if (isStrongRole && isDistinctiveKeyword && center.HasValue)
                         {
                             Console.WriteLine($"[UiaInspector] Native invoke failed for '{display}', requesting fallback click at {center}");

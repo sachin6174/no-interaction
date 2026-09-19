@@ -1,7 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 
 namespace NoInteraction.Core
@@ -20,6 +19,21 @@ namespace NoInteraction.Core
 
         [DllImport("user32.dll")]
         private static extern bool GetCursorPos(out POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr WindowFromPoint(POINT point);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
+        private readonly object _clickLock = new();
+
+        public bool IsTargetAt(Point point, int processId)
+        {
+            var window = WindowFromPoint(new POINT { X = (int)Math.Round(point.X), Y = (int)Math.Round(point.Y) });
+            return window != IntPtr.Zero && GetWindowThreadProcessId(window, out var owner) != 0
+                && owner == (uint)processId;
+        }
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
@@ -54,34 +68,46 @@ namespace NoInteraction.Core
         private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
         private const uint MOUSEEVENTF_LEFTUP = 0x0004;
 
-        public void PerformClick(Point point, Action? completion = null)
+        public bool PerformClick(Point point, int processId, Func<bool> canClick, Action? completion = null)
         {
-            Task.Run(() =>
+            lock (_clickLock)
             {
-                GetCursorPos(out var original);
+                if (!canClick() || !IsTargetAt(point, processId) || !GetCursorPos(out var original)) return false;
 
                 var x = (int)Math.Round(point.X);
                 var y = (int)Math.Round(point.Y);
 
-                SetCursorPos(x, y);
-                Thread.Sleep(15);
+                if (!SetCursorPos(x, y)) return false;
+                try
+                {
+                    if (!canClick() || !IsTargetAt(point, processId)) return false;
 
-                INPUT[] inputs = new INPUT[2];
-                inputs[0].type = INPUT_MOUSE;
-                inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+                    INPUT[] inputs = new INPUT[2];
+                    inputs[0].type = INPUT_MOUSE;
+                    inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
 
-                inputs[1].type = INPUT_MOUSE;
-                inputs[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+                    inputs[1].type = INPUT_MOUSE;
+                    inputs[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
 
-                SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
-                Thread.Sleep(20);
-
-                SetCursorPos(original.X, original.Y);
+                    var sent = SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
+                    if (sent != 2)
+                    {
+                        // Release a potentially inserted down event before reporting failure.
+                        if (sent == 1) SendInput(1, new[] { inputs[1] }, Marshal.SizeOf(typeof(INPUT)));
+                        return false;
+                    }
+                    Thread.Sleep(20);
+                }
+                finally
+                {
+                    SetCursorPos(original.X, original.Y);
+                }
 
                 Console.WriteLine($"[ClickAutomation] Clicked ({x}, {y}) using SendInput and restored cursor to ({original.X}, {original.Y})");
 
                 completion?.Invoke();
-            });
+                return true;
+            }
         }
     }
 }

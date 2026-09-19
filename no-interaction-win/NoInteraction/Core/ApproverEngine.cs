@@ -132,8 +132,8 @@ Your objective is to optimize this application to the absolute highest tier of s
         private readonly System.Threading.Timer _timer;
         private DateTime _lastActionTime = DateTime.MinValue;
         private readonly TimeSpan _cooldown = TimeSpan.FromSeconds(1.0);
-        private volatile bool _ocrScanInFlight;
-        private readonly object _scanLock = new();
+        private int _scanInFlight;
+        private volatile bool _disposed;
 
         private ApproverEngine()
         {
@@ -179,10 +179,9 @@ Your objective is to optimize this application to the absolute highest tier of s
             SaveRules();
             SavePromptQueue();
 
-            // Fixed 1-second cadence so a prompt gets clicked within ~1s of appearing,
-            // whether or not a target app was already active on the previous tick — no
-            // more slow "idle" polling interval that delayed the very first detection.
-            _timer = new System.Threading.Timer(_ => ScheduleScan(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+            // Check for approval prompts every 5 seconds.
+            var scanInterval = TimeSpan.FromSeconds(5);
+            _timer = new System.Threading.Timer(_ => _ = ScheduleScanAsync(), null, scanInterval, scanInterval);
         }
 
         private void SaveRules()
@@ -222,105 +221,124 @@ Your objective is to optimize this application to the absolute highest tier of s
 
         // MARK: Scan loop
 
-        private void ScheduleScan()
+        private async System.Threading.Tasks.Task ScheduleScanAsync()
         {
-            if (!IsEnabled) return;
-            if (DateTime.Now - _lastActionTime < _cooldown) return;
-
-            var targetApps = AppObserver.Shared.FindTargetApplications();
-            if (targetApps.Count == 0) return;
-
-            List<string> buttons = new();
-            List<string> checkboxes = new();
-            Application.Current?.Dispatcher.Invoke(() =>
+            if (_disposed || !IsEnabled || Interlocked.CompareExchange(ref _scanInFlight, 1, 0) != 0) return;
+            List<System.Diagnostics.Process>? targetApps = null;
+            try
             {
-                buttons = ButtonRules.Where(r => r.IsEnabled).Select(r => r.Keyword).ToList();
-                checkboxes = CheckboxRules.Where(r => r.IsEnabled).Select(r => r.Keyword).ToList();
-            });
+                if (DateTime.Now - _lastActionTime < _cooldown) return;
 
-            // Note: checkbox ticking still needs to happen even when there are no enabled
-            // button rules, so only bail out when there's nothing at all to look for.
-            if (buttons.Count == 0 && checkboxes.Count == 0) return;
+                targetApps = AppObserver.Shared.FindTargetApplications();
+                if (targetApps.Count == 0) return;
 
-            foreach (var app in targetApps)
-            {
-                string appName;
-                try { appName = string.IsNullOrEmpty(app.MainWindowTitle) ? app.ProcessName : app.MainWindowTitle; }
-                catch { appName = "Target App"; }
-
-                if (AppObserver.Shared.IsTerminal(app) && TerminalMonitoringEnabled)
+                List<string> buttons = new();
+                List<string> checkboxes = new();
+                Application.Current?.Dispatcher.Invoke(() =>
                 {
-                    try
+                    buttons = ButtonRules.Where(r => r.IsEnabled).Select(r => r.Keyword).ToList();
+                    checkboxes = CheckboxRules.Where(r => r.IsEnabled).Select(r => r.Keyword).ToList();
+                });
+
+                // Note: checkbox ticking still needs to happen even when there are no enabled
+                // button rules, so only bail out when there's nothing at all to look for.
+                if (buttons.Count == 0 && checkboxes.Count == 0) return;
+
+                foreach (var app in targetApps)
+                {
+                    if (_disposed || !IsEnabled) return;
+                    string appName;
+                    try { appName = string.IsNullOrEmpty(app.MainWindowTitle) ? app.ProcessName : app.MainWindowTitle; }
+                    catch { appName = "Target App"; }
+
+                    if (AppObserver.Shared.IsTerminal(app) && TerminalMonitoringEnabled)
                     {
-                        var termResponse = UiaInspector.Shared.InspectTerminalForPrompts(app, buttons);
-                        if (!string.IsNullOrEmpty(termResponse))
+                        try
                         {
-                            _lastActionTime = DateTime.Now;
-                            System.Windows.Forms.SendKeys.SendWait(termResponse);
-                            Record(appName, "Terminal Prompt", "UIA Terminal");
-                            return;
+                            var termResponse = UiaInspector.Shared.InspectTerminalForPrompts(app, buttons);
+                            if (!string.IsNullOrEmpty(termResponse))
+                            {
+                                _lastActionTime = DateTime.Now;
+                                System.Windows.Forms.SendKeys.SendWait(termResponse);
+                                Record(appName, "Terminal Prompt", "UIA Terminal");
+                                return;
+                            }
                         }
+                        catch { }
                     }
-                    catch { }
+
+                    UiaInspector.InspectionResult? result;
+                    try { result = UiaInspector.Shared.InspectAndAutoApprove(app, buttons, checkboxes); }
+                    catch { result = null; }
+
+                    if (result != null)
+                    {
+                        if (result.Action == "Fallback Click Needed" && result.Position.HasValue)
+                        {
+                            if (!ClickAutomation.Shared.PerformClick(result.Position.Value, app.Id,
+                                () => IsEnabled && !_disposed, () => Record(appName, result.ElementText, "UIA + Click")))
+                                continue;
+                        }
+                        else
+                        {
+                            Record(appName, result.ElementText, result.Action);
+                        }
+                        _lastActionTime = DateTime.Now;
+                        return; // matches Mac behavior: stop after the first successful action this tick
+                    }
                 }
 
-                UiaInspector.InspectionResult? result;
-                try { result = UiaInspector.Shared.InspectAndAutoApprove(app, buttons, checkboxes); }
-                catch { result = null; }
-
-                if (result != null)
+                // Pass 2: OCR fallback if nothing was found via UI Automation (OCR only ever
+                // looks for button text, so skip it entirely when there are no button rules).
+                if (buttons.Count == 0) return;
+                foreach (var app in targetApps)
                 {
-                    _lastActionTime = DateTime.Now;
-                    if (result.Action == "Fallback Click Needed" && result.Position.HasValue)
-                    {
-                        ClickAutomation.Shared.PerformClick(result.Position.Value, () =>
-                            Record(appName, result.ElementText, "UIA + Click"));
-                    }
-                    else
-                    {
-                        Record(appName, result.ElementText, result.Action);
-                    }
-                    return; // matches Mac behavior: stop after the first successful action this tick
+                    var bounds = AppObserver.Shared.GetWindowBounds(app);
+                    if (bounds == null) continue;
+
+                    var capturedApp = app;
+                    string capturedAppName = "Target App";
+                    try { capturedAppName = string.IsNullOrEmpty(app.MainWindowTitle) ? app.ProcessName : app.MainWindowTitle; } catch { }
+
+                    if (await RunOcrPassAsync(bounds.Value, buttons, capturedApp, capturedAppName)) break;
                 }
             }
-
-            // Pass 2: OCR fallback if nothing was found via UI Automation (OCR only ever
-            // looks for button text, so skip it entirely when there are no button rules).
-            if (_ocrScanInFlight || buttons.Count == 0) return;
-            foreach (var app in targetApps)
+            catch (Exception ex)
             {
-                var bounds = AppObserver.Shared.GetWindowBounds(app);
-                if (bounds == null) continue;
-
-                _ocrScanInFlight = true;
-                var capturedApp = app;
-                string capturedAppName = "Target App";
-                try { capturedAppName = string.IsNullOrEmpty(app.MainWindowTitle) ? app.ProcessName : app.MainWindowTitle; } catch { }
-
-                _ = RunOcrPassAsync(bounds.Value, buttons, capturedApp, capturedAppName);
-                break;
+                Console.WriteLine($"[ApproverEngine] Scan failed: {ex.Message}");
+            }
+            finally
+            {
+                if (targetApps != null) foreach (var app in targetApps) app.Dispose();
+                Interlocked.Exchange(ref _scanInFlight, 0);
             }
         }
 
         public void Dispose()
         {
+            _disposed = true;
             _timer.Dispose();
         }
 
-        private async System.Threading.Tasks.Task RunOcrPassAsync(Rect bounds, List<string> buttons, System.Diagnostics.Process app, string appName)
+        private async System.Threading.Tasks.Task<bool> RunOcrPassAsync(Rect bounds, List<string> buttons, System.Diagnostics.Process app, string appName)
         {
             try
             {
+                if (_disposed || !IsEnabled) return false;
                 var (point, text) = await OcrScanner.Shared.ScanRegionForKeywordsAsync(bounds, buttons);
-                if (point == null || text == null) return;
-                if (DateTime.Now - _lastActionTime < _cooldown) return;
+                if (point == null || text == null || _disposed || !IsEnabled) return false;
+                if (DateTime.Now - _lastActionTime < _cooldown) return false;
+                if (AppObserver.Shared.GetWindowBounds(app) != bounds) return false;
 
+                if (!ClickAutomation.Shared.PerformClick(point.Value, app.Id, () => IsEnabled && !_disposed,
+                    () => Record(appName, text, "OCR"))) return false;
                 _lastActionTime = DateTime.Now;
-                ClickAutomation.Shared.PerformClick(point.Value, () => Record(appName, text, "OCR"));
+                return true;
             }
-            finally
+            catch (Exception ex)
             {
-                _ocrScanInFlight = false;
+                Console.WriteLine($"[ApproverEngine] OCR pass failed: {ex.Message}");
+                return false;
             }
         }
 

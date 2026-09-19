@@ -44,5 +44,21 @@ This produces a self-contained `dist\NoInteraction.exe` executable with embedded
 ---
 
 ## ⚙️ Configuration & Storage
+
+### Windows Allow-button regression checks
+
+The Windows detector accepts shortcut labels such as `Allow Alt+Enter`. If native
+invocation is unavailable, it can click an enabled, visible UIA Allow button. OCR
+uses normal and contrast-enhanced passes and requires an adjacent Deny label for
+single-word Allow matches. Submit uses the same guard with an adjacent Skip label.
+Coordinate clicks verify the target process owns the
+point; covered windows are skipped. Unchanged prompts are retried after two seconds.
+
+Run the regression checks, including the supplied permission-prompt screenshot:
+
+```powershell
+dotnet run --project Tests/RegressionTests.csproj
+```
+
 Settings, prompt queues, and custom rules are automatically persisted in JSON format at:
 `%AppData%\NoInteraction\settings.json`

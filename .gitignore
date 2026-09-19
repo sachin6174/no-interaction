@@ -113,7 +113,8 @@ eggs/
 [Bb]in/
 [Oo]bj/
 [Dd]ebug/
-[Rr]elease/
+*/[Rr]elease/
+!/release/
 Output/
 installer_output/
 *.nupkg

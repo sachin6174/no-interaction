@@ -52,8 +52,40 @@ namespace NoInteraction.Models
     /// Case-insensitive keyword matching with a word-boundary regex fallback, mirroring
     /// the Mac KeywordMatcher so rule behavior is identical across platforms.
     /// </summary>
+    public static class ApprovalGeometry
+    {
+        public static bool IsSecondaryPrimaryPair(double sx, double sy, double sw, double sh,
+            double px, double py, double pw, double ph)
+        {
+            if (sw <= 0 || sh <= 0 || pw <= 0 || ph <= 0) return false;
+            var height = Math.Max(sh, ph);
+            var gap = px - (sx + sw);
+            return gap >= 0 && gap <= height * 6
+                && Math.Abs((sy + sh / 2) - (py + ph / 2)) <= height * 0.65;
+        }
+
+        public static bool IsDenyAllowPair(double dx, double dy, double dw, double dh,
+            double ax, double ay, double aw, double ah)
+        {
+            return IsSecondaryPrimaryPair(dx, dy, dw, dh, ax, ay, aw, ah);
+        }
+    }
+
     public static class KeywordMatcher
     {
+        // Chromium includes the visible shortcut in some accessible button names.
+        // Strip only a complete modifier/key suffix, never arbitrary trailing prose.
+        public static bool MatchesButton(string label, string keyword)
+        {
+            if (string.IsNullOrWhiteSpace(label) || string.IsNullOrWhiteSpace(keyword)) return false;
+            var normalized = Regex.Replace(label.Trim(),
+                @"\s+[\(\[]?(?:(?:Alt|Ctrl|Control|Shift|Win)\s*\+\s*)+(?:Enter|Return|Space|[A-Z0-9]|F\d{1,2})[\)\]]?$",
+                "", RegexOptions.IgnoreCase);
+            return keyword.Trim().Contains(' ')
+                ? Matches(normalized, keyword)
+                : string.Equals(normalized, keyword.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
         private static readonly object CacheLock = new();
         private static readonly Dictionary<string, Regex> RegexCache = new(StringComparer.OrdinalIgnoreCase);
 
