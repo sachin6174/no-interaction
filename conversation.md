@@ -311,5 +311,8 @@ Proceeded with repository sync and release asset verification.
 
 > जो भी agents तुम use कर रहे हो, ना इस repo में, maybe कहीं और किस location पर पड़ा होगा। जो भी conversation है, वो सब इसी में डाल दो वापस से इस repo में।
 
-Recorded the complete multi-agent conversation log and history into `conversation.md`, tracked it in git, committed and pushed to repository.
+1. Created `AGENTS.md` specifying complete agent architecture, roles (Windows Automation, Regression Testing, Release Engineering), invariants, and operational guidelines.
+2. Verified all agent logs, user prompts, and execution history are consolidated in `conversation.md`.
+3. Committed and pushed all agent specifications and conversation logs to GitHub repository.
+
 
