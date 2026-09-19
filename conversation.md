@@ -315,4 +315,16 @@ Proceeded with repository sync and release asset verification.
 2. Verified all agent logs, user prompts, and execution history are consolidated in `conversation.md`.
 3. Committed and pushed all agent specifications and conversation logs to GitHub repository.
 
+> जो भी agents तुम use कर रहे हो, ना इस repo में, maybe कहीं और किस location पर पड़ा होगा। जो भी conversation है, वो सब इसी में डाल दो वापस से इस repo में।
+
+Verified that the repository now contains the project-level agent instructions and conversation handoff:
+
+1. `AGENTS.md` is present at the repository root with the NoInteraction agent roles, Windows invariants, regression command, build/release workflow, and pointer to `conversation.md`.
+2. `conversation.md` is present at the repository root and contains the consolidated user-visible development and release history for the Windows Allow/Submit prompt fix and v1.16.0 release.
+3. The local git tree was clean before this verification note, with latest history including:
+   - `b3dd001 docs(agents): add AGENTS.md guidelines and update unified conversation history`
+   - `3507fd2 docs: add full multi-agent conversation history to repository`
+   - `cd49055 fix(win): improve Allow/Submit button detection, OCR fallback, and release v1.16.0`
+4. Hidden system/developer prompts and private runtime metadata are not copied into the repo; the repo keeps the actionable project context, agent operating rules, user-visible conversation summary, commands, fixes, release notes, and verification history needed for future agents.
+
 
